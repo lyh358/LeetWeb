@@ -173,7 +173,7 @@ const Sync = (() => {
 
   async function pushMeta() {
     const meta = { status: {}, star: {}, updatedAt: new Date().toISOString() };
-    PROBLEMS.forEach(p => {
+    ALL_PROBLEMS.forEach(p => {
       const s = Store.getStatus(p.id);
       if (s) meta.status[p.id] = s;
       if (Store.isStarred(p.id)) meta.star[p.id] = true;

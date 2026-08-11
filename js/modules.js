@@ -1396,7 +1396,7 @@ function renderApplications() {
    ========================================================= */
 function buildSearchIndex() {
   const idx = [];
-  PROBLEMS.forEach(p => idx.push({
+  ALL_PROBLEMS.forEach(p => idx.push({
     hash: `#/p/${p.id}`, module: "热题", title: `${p.id}. ${p.title}`, sub: `${p.cat} · ${DIFF_TEXT[p.diff]}`,
     content: Store.getDesc(p.id) + "\n" + Store.getNote(p.id),
   }));

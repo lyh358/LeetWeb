@@ -128,7 +128,34 @@ const PROBLEMS = [
   { id: 287, title: "寻找重复数",                            slug: "find-the-duplicate-number",                                  diff: 2, cat: "技巧" },
 ];
 
+// 经典 Hot 100 题单中、但不在当前官方「热题 100」学习计划里的题目。
+// 来源：https://leetcode.cn/problem-list/2cktkvj/（2026-08-11 核对）
+const EXTRA_PROBLEMS = [
+  { id: 461, title: "汉明距离",                            slug: "hamming-distance",                                           diff: 1, cat: "经典补充" },
+  { id: 448, title: "找到所有数组中消失的数字",            slug: "find-all-numbers-disappeared-in-an-array",                   diff: 1, cat: "经典补充" },
+  { id: 338, title: "比特位计数",                          slug: "counting-bits",                                              diff: 1, cat: "经典补充" },
+  { id: 617, title: "合并二叉树",                          slug: "merge-two-binary-trees",                                    diff: 1, cat: "经典补充" },
+  { id: 221, title: "最大正方形",                          slug: "maximal-square",                                             diff: 2, cat: "经典补充" },
+  { id: 647, title: "回文子串",                            slug: "palindromic-substrings",                                     diff: 2, cat: "经典补充" },
+  { id: 494, title: "目标和",                              slug: "target-sum",                                                 diff: 2, cat: "经典补充" },
+  { id: 406, title: "根据身高重建队列",                    slug: "queue-reconstruction-by-height",                            diff: 2, cat: "经典补充" },
+  { id: 399, title: "除法求值",                            slug: "evaluate-division",                                          diff: 2, cat: "经典补充" },
+  { id: 337, title: "打家劫舍 III",                        slug: "house-robber-iii",                                           diff: 2, cat: "经典补充" },
+  { id: 309, title: "买卖股票的最佳时机含冷冻期",          slug: "best-time-to-buy-and-sell-stock-with-cooldown",             diff: 2, cat: "经典补充" },
+  { id: 253, title: "会议室 II",                           slug: "meeting-rooms-ii",                                           diff: 2, cat: "经典补充", premium: true },
+  { id: 538, title: "把二叉搜索树转换为累加树",            slug: "convert-bst-to-greater-tree",                               diff: 2, cat: "经典补充" },
+  { id: 621, title: "任务调度器",                          slug: "task-scheduler",                                              diff: 2, cat: "经典补充" },
+  { id: 96,  title: "不同的二叉搜索树",                    slug: "unique-binary-search-trees",                                diff: 2, cat: "经典补充" },
+  { id: 581, title: "最短无序连续子数组",                  slug: "shortest-unsorted-continuous-subarray",                     diff: 2, cat: "经典补充" },
+  { id: 312, title: "戳气球",                              slug: "burst-balloons",                                             diff: 3, cat: "经典补充" },
+  { id: 301, title: "删除无效的括号",                      slug: "remove-invalid-parentheses",                               diff: 3, cat: "经典补充" },
+  { id: 297, title: "二叉树的序列化与反序列化",            slug: "serialize-and-deserialize-binary-tree",                     diff: 3, cat: "经典补充" },
+  { id: 10,  title: "正则表达式匹配",                      slug: "regular-expression-matching",                              diff: 3, cat: "经典补充" },
+  { id: 85,  title: "最大矩形",                            slug: "maximal-rectangle",                                          diff: 3, cat: "经典补充" },
+];
+
 const DIFF_TEXT = { 1: "简单", 2: "中等", 3: "困难" };
 
 // 便捷索引
-const PROBLEM_BY_ID = PROBLEMS.reduce((m, p) => (m[p.id] = p, m), {});
+const ALL_PROBLEMS = [...PROBLEMS, ...EXTRA_PROBLEMS];
+const PROBLEM_BY_ID = ALL_PROBLEMS.reduce((m, p) => (m[p.id] = p, m), {});

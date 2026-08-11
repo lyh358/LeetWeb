@@ -56,7 +56,7 @@ const Store = {
   // ---- 整体导入 / 导出（备份全部笔记与状态）----
   exportAll() {
     const data = { version: 1, exportedAt: new Date().toISOString(), items: {} };
-    PROBLEMS.forEach(p => {
+    ALL_PROBLEMS.forEach(p => {
       const note = this.getNote(p.id);
       const status = this.getStatus(p.id);
       const star = this.isStarred(p.id);
@@ -76,15 +76,15 @@ const Store = {
   },
 
   // ---- 统计 ----
-  stats() {
+  stats(problems = PROBLEMS) {
     let solved = 0, review = 0, noted = 0;
-    PROBLEMS.forEach(p => {
+    problems.forEach(p => {
       const s = this.getStatus(p.id);
       if (s === 1) solved++;
       else if (s === 2) review++;
       if (this.hasNote(p.id)) noted++;
     });
-    return { solved, review, noted, total: PROBLEMS.length };
+    return { solved, review, noted, total: problems.length };
   }
 };
 

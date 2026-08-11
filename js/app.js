@@ -425,6 +425,30 @@ function renderCategories() {
         </div>
       </section>`;
   });
+  const extraItems = EXTRA_PROBLEMS.filter(matchFilter);
+  if (extraItems.length) {
+    const extraStats = Store.stats(EXTRA_PROBLEMS);
+    const extraDone = extraStats.solved + extraStats.review;
+    const extraPct = Math.round(extraDone / extraStats.total * 100);
+    html += `
+      <section class="category extra-category">
+        <div class="extra-category-head">
+          <div class="extra-heading">
+            <span class="extra-kicker">附加题单</span>
+            <h2>经典 Hot 100 补充</h2>
+            <p>经典题单中与本站新版 Hot 100 不重合的题目</p>
+          </div>
+          <div class="extra-progress" title="${extraDone}/${extraStats.total}（已解决 + 待复习）">
+            <div class="extra-progress-copy"><b>${extraDone}</b><span>/ ${extraStats.total} 完成</span></div>
+            <div class="cat-prog-bar"><span style="width:${extraPct}%"></span></div>
+          </div>
+          <a class="extra-source" href="https://leetcode.cn/problem-list/2cktkvj/" target="_blank" rel="noopener noreferrer">
+            查看原题单 ${ICON.external}
+          </a>
+        </div>
+        <div class="problem-grid extra-problem-grid">${extraItems.map(cardHtml).join("")}</div>
+      </section>`;
+  }
   if (!html) html = `<div style="text-align:center;color:var(--ink-faint);padding:60px 0">没有符合条件的题目</div>`;
   container.innerHTML = html;
 
@@ -453,6 +477,7 @@ function cardHtml(p) {
         <div class="pc-title">${p.title}</div>
         <div class="pc-meta">
           <span class="diff d${p.diff}">${DIFF_TEXT[p.diff]}</span>
+          ${p.premium ? `<span class="premium-mark">Plus</span>` : ""}
         </div>
       </div>
       <span class="difficulty-mark d${p.diff}" title="${DIFF_TEXT[p.diff]}">
@@ -481,7 +506,7 @@ function renderDetail(id) {
     key: "p" + id,
     title: p.title,
     noteLabel: "笔记",
-    tags: [{ text: DIFF_TEXT[p.diff], cls: "d" + p.diff }, { text: p.cat }, { text: "#" + p.id }],
+    tags: [{ text: DIFF_TEXT[p.diff], cls: "d" + p.diff }, { text: p.cat }, { text: "#" + p.id }, ...(p.premium ? [{ text: "Plus" }] : [])],
     link: { href: lcUrl },
     status: { get: () => Store.getStatus(id), set: v => { Store.setStatus(id, v); pushMetaSafe(); } },
     star: { get: () => Store.isStarred(id), toggle: () => { const on = Store.toggleStar(id); pushMetaSafe(); return on; } },
