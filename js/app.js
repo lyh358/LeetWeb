@@ -267,7 +267,7 @@ function initBackup() {
     a.href = URL.createObjectURL(blob);
     a.download = `拾遗-全站备份-${new Date().toISOString().slice(0,10)}.json`;
     a.click(); URL.revokeObjectURL(a.href);
-    toast("已导出全站备份（含四个模块与 PDF）");
+    toast("已导出全站备份（含全部模块与 PDF）");
   };
   const fileInput = document.getElementById("importFile");
   document.getElementById("importBtn").onclick = () => fileInput.click();
@@ -518,13 +518,14 @@ function route() {
   if ((m = hash.match(/^#\/kb\/n\/([\w-]+)/))) { renderKbNote(m[1]); window.scrollTo(0, 0); return; }
   if (hash === "#/resume") { renderResume(null); return; }
   if ((m = hash.match(/^#\/resume\/([\w-]+)/))) { renderResume(m[1]); return; }
+  if (hash === "#/applications") { renderApplications(); return; }
   renderHome();
 }
 
 // 列表类路由（拉取云端目录后可安全重渲染，不会打断编辑）
 function isListRoute() {
   const h = location.hash || "#/";
-  return h === "#/" || h === "" || h === "#/hot100" || h === "#/custom" || h === "#/kb" || /^#\/kb\/f\//.test(h) || /^#\/resume/.test(h);
+  return h === "#/" || h === "" || h === "#/hot100" || h === "#/custom" || h === "#/kb" || /^#\/kb\/f\//.test(h) || /^#\/resume/.test(h) || h === "#/applications";
 }
 
 function initSync() {

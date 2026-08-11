@@ -149,6 +149,7 @@ function renderHome() {
   const customN = CustomStore.list().length;
   const kbN = KbStore.load().notes.length;
   const resumeN = ResumeStore.list().length;
+  const applicationN = ApplicationStore.list().length;
   app.innerHTML = `
   <div class="view"><div class="wrap home">
     <section class="home-hero">
@@ -207,6 +208,14 @@ function renderHome() {
           <h3>简历</h3>
           <p>多版本简历的收纳与查看，支持 PDF 与 Markdown 上传下载。</p>
           <span class="mc-stat">${resumeN} 个版本</span>
+        </div>
+      </a>
+      <a class="module-card" href="#/applications">
+        <span class="mc-num">伍</span>
+        <div class="mc-body">
+          <h3>投递管理</h3>
+          <p>集中整理目标公司、岗位与招聘流程，及时跟进每一次机会。</p>
+          <span class="mc-stat">${applicationN} 家公司</span>
         </div>
       </a>
     </div>
@@ -1162,6 +1171,227 @@ async function downloadResume(id) {
 }
 
 /* =========================================================
+   投递管理（applications）：公司与招聘流程跟踪表
+   ========================================================= */
+const APPLICATION_STAGES = [
+  { value: "准备投递", tone: "idle" },
+  { value: "简历筛选", tone: "active" },
+  { value: "测评", tone: "active" },
+  { value: "笔试", tone: "active" },
+  { value: "笔试通过", tone: "progress" },
+  { value: "一面", tone: "progress" },
+  { value: "二面", tone: "progress" },
+  { value: "终面", tone: "progress" },
+  { value: "面试通过", tone: "success" },
+  { value: "已 Offer", tone: "offer" },
+  { value: "已拒绝", tone: "danger" },
+  { value: "已结束", tone: "muted" },
+];
+
+const ApplicationStore = {
+  KEY: "leetweb:applications:index",
+  list() {
+    try {
+      const rows = JSON.parse(localStorage.getItem(this.KEY) || "[]");
+      return Array.isArray(rows) ? rows.map(row => ({
+        id: row.id || uid(),
+        company: String(row.company || ""),
+        role: String(row.role || ""),
+        location: String(row.location || ""),
+        applied: !!row.applied,
+        stage: APPLICATION_STAGES.some(x => x.value === row.stage) ? row.stage : "准备投递",
+        website: String(row.website || ""),
+        created: Number(row.created) || Date.now(),
+        updated: Number(row.updated) || Number(row.created) || Date.now(),
+      })) : [];
+    } catch (e) { return []; }
+  },
+  save(rows) { localStorage.setItem(this.KEY, JSON.stringify(rows)); },
+  add(data) {
+    const rows = this.list();
+    const now = Date.now();
+    const row = {
+      id: uid(), company: data.company, role: data.role || "", location: data.location || "",
+      applied: false, stage: "准备投递", website: data.website || "", created: now, updated: now,
+    };
+    rows.unshift(row); this.save(rows); return row;
+  },
+  update(id, patch) {
+    const rows = this.list();
+    const row = rows.find(x => x.id === id);
+    if (!row) return;
+    Object.assign(row, patch, { updated: Date.now() });
+    this.save(rows);
+  },
+  remove(id) { this.save(this.list().filter(x => x.id !== id)); },
+};
+
+function applicationStageTone(stage) {
+  const item = APPLICATION_STAGES.find(x => x.value === stage);
+  return item ? item.tone : "idle";
+}
+
+function safeCompanyUrl(raw) {
+  let value = String(raw || "").trim();
+  if (!value) return "";
+  if (!/^https?:\/\//i.test(value)) value = "https://" + value;
+  try {
+    const url = new URL(value);
+    return /^https?:$/.test(url.protocol) ? url.href : "";
+  } catch (e) { return ""; }
+}
+
+let applicationSyncTimer;
+async function syncApplicationIndex(showToast) {
+  if (!Sync.configured()) return;
+  const ok = await trySync("applications", "投递记录", () => Sync.writeText("applications/index.json", JSON.stringify(ApplicationStore.list(), null, 2), "update applications"));
+  if (showToast && ok) toast("投递记录已同步");
+}
+function queueApplicationSync() {
+  clearTimeout(applicationSyncTimer);
+  applicationSyncTimer = setTimeout(() => syncApplicationIndex(false), 900);
+}
+async function pullApplicationIndex() {
+  if (!Sync.configured()) return;
+  try {
+    const text = await Sync.readText("applications/index.json");
+    if (text) ApplicationStore.save(JSON.parse(text));
+  } catch (e) {}
+}
+
+const applicationViewState = { q: "", stage: "全部" };
+
+function applicationStageOptions(selected) {
+  return APPLICATION_STAGES.map(item => `<option value="${esc(item.value)}" ${item.value === selected ? "selected" : ""}>${esc(item.value)}</option>`).join("");
+}
+
+function applicationRow(row) {
+  const url = safeCompanyUrl(row.website);
+  return `<tr data-id="${row.id}">
+    <td class="company-cell"><input class="application-input company-input" data-field="company" value="${esc(row.company)}" placeholder="公司名称" aria-label="公司名称" /></td>
+    <td><input class="application-input" data-field="role" value="${esc(row.role)}" placeholder="投递岗位" aria-label="投递岗位" /></td>
+    <td><input class="application-input" data-field="location" value="${esc(row.location)}" placeholder="工作地点" aria-label="工作地点" /></td>
+    <td><select class="application-select applied-select ${row.applied ? "is-applied" : "is-pending"}" data-field="applied" aria-label="投递状态">
+      <option value="0" ${row.applied ? "" : "selected"}>未投递</option>
+      <option value="1" ${row.applied ? "selected" : ""}>已投递</option>
+    </select></td>
+    <td><select class="application-select stage-select stage-${applicationStageTone(row.stage)}" data-field="stage" aria-label="流程状态">${applicationStageOptions(row.stage)}</select></td>
+    <td><div class="website-field">
+      <input class="application-input" data-field="website" value="${esc(row.website)}" placeholder="career.company.com" aria-label="公司网址" />
+      <a class="website-open ${url ? "" : "disabled"}" ${url ? `href="${esc(url)}" target="_blank" rel="noopener noreferrer"` : "aria-disabled=\"true\""} title="打开公司网址">${ICON.external}</a>
+    </div></td>
+    <td class="application-actions"><button class="row-icon-btn application-delete" title="删除这条投递" aria-label="删除这条投递">${ICON.trash}</button></td>
+  </tr>`;
+}
+
+async function addApplication() {
+  const data = await openPrompt({
+    title: "添加新投递",
+    desc: "先记录基本信息，投递状态和招聘流程可在表格中随时调整。",
+    fields: [
+      { id: "company", label: "公司名称", placeholder: "例如：字节跳动" },
+      { id: "role", label: "投递岗位", placeholder: "例如：前端开发工程师" },
+      { id: "location", label: "工作地点", placeholder: "例如：上海" },
+      { id: "website", label: "公司网址", placeholder: "例如：jobs.example.com" },
+    ],
+    required: ["company"], okText: "添加",
+  });
+  if (!data) return;
+  ApplicationStore.add(data);
+  queueApplicationSync();
+  applicationViewState.q = "";
+  applicationViewState.stage = "全部";
+  renderApplications();
+  toast("已添加 " + data.company);
+}
+
+function renderApplications() {
+  document.body.classList.remove("detail-mode");
+  setNav("applications");
+  const rows = ApplicationStore.list();
+  const q = applicationViewState.q.toLowerCase();
+  const filtered = rows.filter(row => {
+    const hitText = !q || [row.company, row.role, row.location, row.website].some(value => value.toLowerCase().includes(q));
+    const hitStage = applicationViewState.stage === "全部" || row.stage === applicationViewState.stage;
+    return hitText && hitStage;
+  });
+  const applied = rows.filter(row => row.applied).length;
+  const active = rows.filter(row => !["准备投递", "已 Offer", "已拒绝", "已结束"].includes(row.stage)).length;
+  const offers = rows.filter(row => row.stage === "已 Offer").length;
+  const empty = rows.length
+    ? `<div class="application-empty filtered-empty"><span>没有符合当前筛选的记录</span><button class="btn" id="applicationClear">清除筛选</button></div>`
+    : `<div class="application-empty"><span class="application-empty-mark">投</span><h2>从第一家公司开始</h2><p>添加目标公司后，就可以在这里持续更新投递和面试进展。</p><button class="btn primary" id="applicationEmptyAdd">添加新投递</button></div>`;
+
+  app.innerHTML = `<div class="view applications-view"><div class="applications-wrap">
+    <section class="applications-head">
+      <div><span class="applications-eyebrow">JOB APPLICATION TRACKER</span><h1>投递管理</h1><p>把分散的投递和面试进度，整理成一张清楚、可持续更新的表。</p></div>
+      <div class="application-stats" aria-label="投递概览">
+        <div><b>${rows.length}</b><span>目标公司</span></div>
+        <div><b>${applied}</b><span>已投递</span></div>
+        <div><b>${active}</b><span>流程中</span></div>
+        <div class="offer-stat"><b>${offers}</b><span>Offer</span></div>
+      </div>
+    </section>
+    <div class="applications-toolbar">
+      <div class="search application-search">${ICON.search}<input id="applicationSearch" value="${esc(applicationViewState.q)}" placeholder="搜索公司、岗位、地点" /></div>
+      <select class="application-filter" id="applicationStageFilter" aria-label="按流程筛选">
+        <option value="全部">全部流程</option>${applicationStageOptions(applicationViewState.stage)}
+      </select>
+      <span class="application-result-count">${filtered.length} 条记录</span>
+      <div class="spacer"></div>
+      <button class="btn primary" id="applicationAdd"><span class="add-symbol">+</span> 添加新投递</button>
+    </div>
+    <div class="application-table-shell">
+      ${filtered.length ? `<div class="application-table-scroll"><table class="application-table">
+        <thead><tr><th>公司</th><th>投递岗位</th><th>工作地点</th><th>投递状态</th><th>流程状态</th><th>公司网址</th><th><span class="sr-only">操作</span></th></tr></thead>
+        <tbody>${filtered.map(applicationRow).join("")}</tbody>
+      </table></div>` : empty}
+    </div>
+    <div class="applications-foot"><span>数据自动保存在当前浏览器</span><span>·</span><span>支持全站备份${Sync.configured() ? "与 GitHub 同步" : ""}</span></div>
+  </div></div>`;
+
+  document.getElementById("applicationAdd").onclick = addApplication;
+  const emptyAdd = document.getElementById("applicationEmptyAdd"); if (emptyAdd) emptyAdd.onclick = addApplication;
+  const clear = document.getElementById("applicationClear"); if (clear) clear.onclick = () => { applicationViewState.q = ""; applicationViewState.stage = "全部"; renderApplications(); };
+  const search = document.getElementById("applicationSearch");
+  const applySearch = () => {
+    applicationViewState.q = search.value.trim();
+    renderApplications();
+    requestAnimationFrame(() => { const next = document.getElementById("applicationSearch"); if (next) { next.focus(); next.setSelectionRange(next.value.length, next.value.length); } });
+  };
+  search.oncompositionstart = () => { search.dataset.composing = "1"; };
+  search.oncompositionend = () => { delete search.dataset.composing; applySearch(); };
+  search.oninput = () => { if (!search.dataset.composing) applySearch(); };
+  const filter = document.getElementById("applicationStageFilter");
+  filter.value = applicationViewState.stage;
+  filter.onchange = () => { applicationViewState.stage = filter.value; renderApplications(); };
+
+  document.querySelectorAll(".application-table tbody tr").forEach(tr => {
+    tr.querySelectorAll("input[data-field]").forEach(input => {
+      input.onchange = () => {
+        const value = input.value.trim();
+        if (input.dataset.field === "company" && !value) { toast("公司名称不能为空"); renderApplications(); return; }
+        ApplicationStore.update(tr.dataset.id, { [input.dataset.field]: value });
+        queueApplicationSync();
+        if (input.dataset.field === "website") renderApplications();
+      };
+    });
+    tr.querySelectorAll("select[data-field]").forEach(select => {
+      select.onchange = () => {
+        const value = select.dataset.field === "applied" ? select.value === "1" : select.value;
+        ApplicationStore.update(tr.dataset.id, { [select.dataset.field]: value });
+        queueApplicationSync(); renderApplications();
+      };
+    });
+    tr.querySelector(".application-delete").onclick = () => {
+      const row = ApplicationStore.list().find(x => x.id === tr.dataset.id);
+      if (!row || !confirm(`删除「${row.company}」的投递记录？`)) return;
+      ApplicationStore.remove(tr.dataset.id); queueApplicationSync(); renderApplications(); toast("投递记录已删除");
+    };
+  });
+}
+
+/* =========================================================
    全局搜索（Cmd/Ctrl+K 命令面板）：跨模块 + 搜正文
    ========================================================= */
 function buildSearchIndex() {
@@ -1183,6 +1413,11 @@ function buildSearchIndex() {
   ResumeStore.list().forEach(r => idx.push({
     hash: `#/resume/${r.id}`, module: "简历", title: r.name, sub: r.kind.toUpperCase(),
     content: r.kind === "md" ? ResumeStore.getMd(r.id) : "",
+  }));
+  ApplicationStore.list().forEach(row => idx.push({
+    hash: "#/applications", module: "投递", title: row.company,
+    sub: [row.role, row.location, row.stage].filter(Boolean).join(" · "),
+    content: row.website || "",
   }));
   return idx;
 }
@@ -1216,7 +1451,7 @@ function openSearch() {
   const mask = document.createElement("div");
   mask.className = "modal-mask search-mask";
   mask.innerHTML = `<div class="search-box">
-    <div class="sk-input"><span class="sk-ic">${ICON.search}</span><input id="skInput" placeholder="搜索题目 / 笔记 / 知识库 / 简历…" autocomplete="off" spellcheck="false"></div>
+    <div class="sk-input"><span class="sk-ic">${ICON.search}</span><input id="skInput" placeholder="搜索题目 / 笔记 / 知识库 / 简历 / 投递…" autocomplete="off" spellcheck="false"></div>
     <div class="sk-results" id="skResults"><div class="sk-hint">输入关键词开始搜索 · 支持搜正文</div></div>
     <div class="sk-foot"><span>↑ ↓ 选择</span><span>↵ 打开</span><span>Esc 关闭</span></div>
   </div>`;
@@ -1309,6 +1544,7 @@ async function moduleInitialPull() {
   await pullCustomIndex();
   await pullKbIndex();
   await pullResumeIndex();
+  await pullApplicationIndex();
 }
 
 function initModulesUi() { initGlobalDnd(); initSearch(); }
