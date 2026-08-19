@@ -531,6 +531,7 @@ function escapeHtml(s) {
    路由
    ========================================================= */
 function route() {
+  document.body.classList.remove("kb-pdf-immersive");
   const hash = location.hash || "#/";
   let m;
   if (hash === "#/" || hash === "") { renderHome(); return; }

@@ -882,7 +882,15 @@ function renderKb(folderId) {
 }
 
 let kbNoteTimer;
+function setKbPdfImmersive(on) {
+  document.body.classList.toggle("kb-pdf-immersive", !!on);
+}
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && document.body.classList.contains("kb-pdf-immersive")) setKbPdfImmersive(false);
+});
+
 function renderKbNote(nid) {
+  setKbPdfImmersive(false);
   const n = KbStore.getNote(nid);
   if (!n) { location.hash = "#/kb"; return; }
   setNav("kb");
@@ -892,15 +900,24 @@ function renderKbNote(nid) {
 
   if (n.kind === "pdf") {
     app.innerHTML = `
-    <div class="view"><div class="kb-note-page">
+    <div class="view"><div class="kb-note-page kb-pdf-page" id="kbPdfPage">
       <div class="pane-head">
         <span class="back-btn" onclick="location.hash='${backHref}'">${ICON.back} 返回</span>
         <span class="label" style="margin-left:14px">${esc(n.name)} · PDF</span>
         <div class="spacer" style="flex:1"></div>
         <button class="btn" id="dlPdf">${ICON.download} 下载</button>
       </div>
+      <button class="kb-pdf-reveal" id="kbPdfReveal" title="显示页面工具栏" aria-label="显示页面工具栏">${ICON.back}</button>
       <div class="kb-pdf-body" id="pdfBody"><div class="empty-note"><span class="spin"></span><p style="margin-top:12px">正在载入 PDF…</p></div></div>
     </div></div>`;
+    const pdfBody = document.getElementById("pdfBody");
+    const reveal = document.getElementById("kbPdfReveal");
+    let immerseTimer;
+    const enterImmersive = () => setKbPdfImmersive(true);
+    pdfBody.addEventListener("pointerenter", () => { immerseTimer = setTimeout(enterImmersive, 260); });
+    pdfBody.addEventListener("pointerleave", () => clearTimeout(immerseTimer));
+    pdfBody.addEventListener("wheel", enterImmersive, { passive: true, capture: true });
+    reveal.onclick = () => setKbPdfImmersive(false);
     (async () => {
       let blob = null;
       const local = await PdfDB.get("kb-" + nid);
@@ -910,6 +927,11 @@ function renderKbNote(nid) {
       if (!blob) { body.innerHTML = `<div class="empty-note"><span class="brush">缺</span><p>未找到该 PDF 文件。</p></div>`; return; }
       const url = URL.createObjectURL(blob);
       body.innerHTML = `<iframe class="pdf-frame" src="${url}#toolbar=1&navpanes=0&view=FitH" title="${esc(n.name)}"></iframe>`;
+      const frame = body.querySelector(".pdf-frame");
+      frame.addEventListener("focus", enterImmersive);
+      window.addEventListener("blur", () => {
+        if (document.activeElement === frame) enterImmersive();
+      }, { once: true });
       const dl = document.getElementById("dlPdf"); if (dl) dl.onclick = () => { const a = document.createElement("a"); a.href = url; a.download = n.name + ".pdf"; a.click(); };
     })();
     return;
