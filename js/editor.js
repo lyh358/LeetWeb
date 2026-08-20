@@ -47,6 +47,33 @@ function _insertAt(ta, text) {
   const pos = s + text.length; ta.focus(); ta.selectionStart = ta.selectionEnd = pos;
 }
 
+function _toggleHighlightSel(ta, color, placeholder) {
+  const value = ta.value;
+  let s = ta.selectionStart, e = ta.selectionEnd;
+  const selected = value.slice(s, e);
+  const full = selected.match(/^==\{(yellow|green|pink)\}([\s\S]*?)==$/);
+  if (full) {
+    const replacement = full[1] === color ? full[2] : `=={${color}}${full[2]}==`;
+    ta.value = value.slice(0, s) + replacement + value.slice(e);
+    ta.focus(); ta.selectionStart = s; ta.selectionEnd = s + replacement.length;
+    return;
+  }
+  const opener = value.slice(0, s).match(/==\{(yellow|green|pink)\}$/);
+  if (opener && value.slice(e, e + 2) === "==") {
+    const openStart = s - opener[0].length;
+    if (opener[1] === color) {
+      ta.value = value.slice(0, openStart) + selected + value.slice(e + 2);
+      ta.focus(); ta.selectionStart = openStart; ta.selectionEnd = openStart + selected.length;
+    } else {
+      const nextOpen = `=={${color}}`;
+      ta.value = value.slice(0, openStart) + nextOpen + selected + value.slice(e);
+      ta.focus(); ta.selectionStart = openStart + nextOpen.length; ta.selectionEnd = openStart + nextOpen.length + selected.length;
+    }
+    return;
+  }
+  _wrapSel(ta, `=={${color}}`, "==", placeholder || "重点内容");
+}
+
 // 将可编辑预览区的常见 HTML 结构转换回 Markdown，供预览模式直接编辑后保存。
 function _previewHtmlToMarkdown(root) {
   const children = node => [...node.childNodes].map(inline).join("");
@@ -206,6 +233,17 @@ function createMde(opts) {
       const end = textNode === range.endContainer ? range.endOffset : textNode.nodeValue.length;
       if (end > start) parts.push({ node: textNode, start, end });
     }
+    const marks = [...new Set(parts.map(part => part.node.parentElement.closest("mark")).filter(Boolean))];
+    const removeHighlight = parts.length > 0 && parts.every(part => {
+      const mark = part.node.parentElement.closest("mark");
+      return mark && mark.classList.contains(`highlight-${color}`);
+    });
+    if (removeHighlight) {
+      marks.forEach(mark => mark.replaceWith(...mark.childNodes));
+      syncPreviewSource(editable);
+      window.getSelection().removeAllRanges();
+      return true;
+    }
     parts.reverse().forEach(part => {
       const parentMark = part.node.parentElement.closest("mark");
       if (parentMark) {
@@ -265,9 +303,9 @@ function createMde(opts) {
     switch (name) {
       case "bold": _wrapSel(ta, "**", "**", "粗体"); break;
       case "italic": _wrapSel(ta, "_", "_", "斜体"); break;
-      case "highlight-yellow": _wrapSel(ta, "=={yellow}", "==", "重点内容"); break;
-      case "highlight-green": _wrapSel(ta, "=={green}", "==", "重点内容"); break;
-      case "highlight-pink": _wrapSel(ta, "=={pink}", "==", "重点内容"); break;
+      case "highlight-yellow": _toggleHighlightSel(ta, "yellow", "重点内容"); break;
+      case "highlight-green": _toggleHighlightSel(ta, "green", "重点内容"); break;
+      case "highlight-pink": _toggleHighlightSel(ta, "pink", "重点内容"); break;
       case "code": _wrapSel(ta, "`", "`", "code"); break;
       case "codeblock": _wrapSel(ta, "\n```\n", "\n```\n", "代码"); break;
       case "quote": _linePrefix(ta, "> "); break;

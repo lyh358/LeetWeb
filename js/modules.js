@@ -893,12 +893,17 @@ let kbNoteTimer;
 function setKbPdfImmersive(on) {
   document.body.classList.toggle("kb-pdf-immersive", !!on);
 }
+function setKbMdImmersive(on) {
+  document.body.classList.toggle("kb-md-immersive", !!on);
+}
 document.addEventListener("keydown", e => {
   if (e.key === "Escape" && document.body.classList.contains("kb-pdf-immersive")) setKbPdfImmersive(false);
+  if (e.key === "Escape" && document.body.classList.contains("kb-md-immersive")) setKbMdImmersive(false);
 });
 
 function renderKbNote(nid) {
   setKbPdfImmersive(false);
+  setKbMdImmersive(false);
   const n = KbStore.getNote(nid);
   if (!n) { location.hash = "#/kb"; return; }
   setNav("kb");
@@ -948,7 +953,7 @@ function renderKbNote(nid) {
   // md 笔记：公共编辑器组件
   const md = KbStore.getMd(nid);
   app.innerHTML = `
-  <div class="view"><div class="kb-note-page">
+  <div class="view"><div class="kb-note-page kb-md-page">
     <div class="pane-head">
       <span class="back-btn" onclick="location.hash='${backHref}'">${ICON.back} 返回</span>
       <span class="label" style="margin-left:14px">${esc(n.name)}</span>
@@ -957,6 +962,7 @@ function renderKbNote(nid) {
       <button class="btn" id="kbDl">${ICON.download} .md</button>
       <button class="btn primary" id="kbSave">${ICON.save} 保存</button>
     </div>
+    <button class="kb-pdf-reveal kb-md-reveal" id="kbMdReveal" title="显示阅读工具栏" aria-label="显示阅读工具栏">${ICON.back}</button>
     <div class="kb-note-body" id="kbMount"></div>
   </div></div>`;
 
@@ -977,9 +983,21 @@ function renderKbNote(nid) {
     placeholder: `# ${n.name}\n\n在此记录知识点，支持 Markdown…`,
     mode: md.trim() ? "view" : "edit",
     documentReader: true,
+    onModeChange: mode => { if (mode !== "view") setKbMdImmersive(false); },
     onInput: () => { clearTimeout(kbNoteTimer); kbNoteTimer = setTimeout(() => persist(false), 800); },
   });
   document.getElementById("kbMount").appendChild(mde.el);
+  const mdView = mde.el.querySelector(".mde-view");
+  const mdReveal = document.getElementById("kbMdReveal");
+  let lastMdScroll = 0;
+  mdView.addEventListener("scroll", () => {
+    const next = mdView.scrollTop;
+    if (mde.getMode() !== "view") { setKbMdImmersive(false); lastMdScroll = next; return; }
+    if (next > lastMdScroll + 7 && next > 36) setKbMdImmersive(true);
+    else if (next < lastMdScroll - 7 || next < 12) setKbMdImmersive(false);
+    lastMdScroll = next;
+  }, { passive: true });
+  mdReveal.onclick = () => setKbMdImmersive(false);
   mde.textarea.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); persist(true); } });
   document.getElementById("kbSave").onclick = () => persist(true);
   document.getElementById("kbDl").onclick = () => { const blob = new Blob([mde.get()], { type: "text/markdown;charset=utf-8" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = n.name + ".md"; a.click(); URL.revokeObjectURL(a.href); };
