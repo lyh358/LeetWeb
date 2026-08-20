@@ -968,6 +968,7 @@ function renderKbNote(nid) {
     value: md,
     placeholder: `# ${n.name}\n\n在此记录知识点，支持 Markdown…`,
     mode: md.trim() ? "view" : "edit",
+    documentReader: true,
     onInput: () => { clearTimeout(kbNoteTimer); kbNoteTimer = setTimeout(() => persist(false), 800); },
   });
   document.getElementById("kbMount").appendChild(mde.el);
@@ -1161,6 +1162,7 @@ function renderResumeMain(sel) {
     value: md,
     placeholder: `# ${sel.name}\n\n用 Markdown 书写简历…`,
     mode: md.trim() ? "view" : "edit",
+    documentReader: true,
     onInput: () => { clearTimeout(resumeMdTimer); resumeMdTimer = setTimeout(() => persist(false), 800); },
   });
   document.getElementById("rsBody").appendChild(mde.el);

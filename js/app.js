@@ -291,9 +291,43 @@ function initBackup() {
 if (window.marked) {
   marked.setOptions({ breaks: true, gfm: true });
 }
+
+// 在普通文本中把 ==重点== 或 =={颜色}重点== 转换成 <mark>。在 Markdown 解析与净化之后处理，
+// 因此不会影响代码块，也不会让笔记中的 HTML 获得额外执行能力。
+function applyMarkdownHighlights(html) {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = html;
+  const walker = document.createTreeWalker(tpl.content, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  let node;
+  while ((node = walker.nextNode())) {
+    if (!node.parentElement || node.parentElement.closest("code, pre, mark, script, style")) continue;
+    if (node.nodeValue.includes("==")) textNodes.push(node);
+  }
+  textNodes.forEach(textNode => {
+    const text = textNode.nodeValue;
+    const re = /==(?:\{(yellow|green|pink)\})?(\S(?:[\s\S]*?\S)?)==/g;
+    let match, lastIndex = 0;
+    const fragment = document.createDocumentFragment();
+    while ((match = re.exec(text))) {
+      fragment.append(document.createTextNode(text.slice(lastIndex, match.index)));
+      const mark = document.createElement("mark");
+      if (match[1]) mark.className = `highlight-${match[1]}`;
+      mark.textContent = match[2];
+      fragment.append(mark);
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex) {
+      fragment.append(document.createTextNode(text.slice(lastIndex)));
+      textNode.replaceWith(fragment);
+    }
+  });
+  return tpl.innerHTML;
+}
 function renderMarkdown(md) {
   const raw = marked.parse(md || "");
-  return window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
+  const clean = window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
+  return applyMarkdownHighlights(clean);
 }
 // 把 markdown 渲染进容器并高亮代码块
 function renderMarkdownInto(el, md) {

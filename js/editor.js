@@ -49,6 +49,7 @@ function _insertAt(ta, text) {
 
 const MDE_TOOLS = [
   ["h", "标题", "H"], ["bold", "加粗", "<b>B</b>"], ["italic", "斜体", "<i>I</i>"],
+  ["highlight-yellow", "黄色高亮", "<span class=\"mde-highlight-icon yellow\">✦</span>"], ["highlight-green", "绿色高亮", "<span class=\"mde-highlight-icon green\">✦</span>"], ["highlight-pink", "粉色高亮", "<span class=\"mde-highlight-icon pink\">✦</span>"],
   ["code", "行内代码", "&lt;/&gt;"], ["codeblock", "代码块", "{ }"], ["quote", "引用", "❝"],
   ["ul", "无序列表", "•"], ["ol", "有序列表", "1."], ["link", "链接", "🔗"], ["image", "插入图片", "🖼"],
 ];
@@ -60,17 +61,26 @@ const MDE_TOOLS = [
     mode             'edit' | 'split' | 'view'（默认 edit）
     onInput(value)   每次输入回调（用于自动保存，调用方自行防抖）
     decoratePreview()  可选，返回预览区顶部要额外插入的 HTML（如 PDF）
+    documentReader    启用 A4 阅读版式与单双页、缩放控制
 */
 function createMde(opts) {
   opts = opts || {};
   const root = document.createElement("div");
-  root.className = "mde";
+  root.className = "mde" + (opts.documentReader ? " document-reader" : "");
   root.innerHTML = `
     <div class="mde-tools">
       <div class="mde-fmt">
         ${MDE_TOOLS.map(([c, t, l]) => `<button type="button" data-cmd="${c}" title="${t}">${l}</button>`).join("")}
       </div>
       <div class="spacer"></div>
+      ${opts.documentReader ? `<div class="mde-reader-controls" aria-label="阅读版式">
+        <button type="button" data-reader-pages="one" title="单页阅读">单页</button>
+        <button type="button" data-reader-pages="two" title="双页阅读">双页</button>
+        <span class="reader-divider"></span>
+        <button type="button" data-reader-zoom="out" title="缩小">−</button>
+        <button type="button" data-reader-zoom="reset" title="重置缩放">100%</button>
+        <button type="button" data-reader-zoom="in" title="放大">＋</button>
+      </div>` : ""}
       <div class="seg mde-modes">
         <button type="button" data-mode="edit">编辑</button>
         <button type="button" data-mode="split">分屏</button>
@@ -88,12 +98,24 @@ function createMde(opts) {
   ta.placeholder = opts.placeholder || "";
   let mode = opts.mode || "edit";
   let previewTimer = null, imgInput = null;
+  let readerPages = "one", readerScale = 1;
+
+  function updateReaderControls() {
+    root.querySelectorAll("[data-reader-pages]").forEach(b => b.classList.toggle("active", b.dataset.readerPages === readerPages));
+    const reset = root.querySelector('[data-reader-zoom="reset"]');
+    if (reset) reset.textContent = `${Math.round(readerScale * 100)}%`;
+  }
 
   function renderPreview() {
     let html = "";
     if (opts.decoratePreview) html += opts.decoratePreview() || "";
     const md = ta.value;
-    if (md.trim()) html += `<div class="markdown">${renderMarkdown(md)}</div>`;
+    if (md.trim()) {
+      const content = `<div class="markdown">${renderMarkdown(md)}</div>`;
+      html += opts.documentReader
+        ? `<div class="md-reader" data-pages="${readerPages}" style="--reader-scale:${readerScale}"><div class="md-reader-stage">${content}</div></div>`
+        : content;
+    }
     if (!html) html = `<div class="empty-note"><span class="brush">墨</span><p>还没有内容。</p></div>`;
     view.innerHTML = html;
     view.querySelectorAll("pre code").forEach(b => { try { hljs.highlightElement(b); } catch (e) {} });
@@ -102,6 +124,7 @@ function createMde(opts) {
   function apply() {
     root.dataset.mode = mode;
     root.querySelectorAll(".mde-modes button").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
+    updateReaderControls();
     if (mode !== "edit") renderPreview();
     if (opts.onModeChange) opts.onModeChange(mode);
   }
@@ -132,6 +155,9 @@ function createMde(opts) {
     switch (name) {
       case "bold": _wrapSel(ta, "**", "**", "粗体"); break;
       case "italic": _wrapSel(ta, "_", "_", "斜体"); break;
+      case "highlight-yellow": _wrapSel(ta, "=={yellow}", "==", "重点内容"); break;
+      case "highlight-green": _wrapSel(ta, "=={green}", "==", "重点内容"); break;
+      case "highlight-pink": _wrapSel(ta, "=={pink}", "==", "重点内容"); break;
       case "code": _wrapSel(ta, "`", "`", "code"); break;
       case "codeblock": _wrapSel(ta, "\n```\n", "\n```\n", "代码"); break;
       case "quote": _linePrefix(ta, "> "); break;
@@ -145,6 +171,12 @@ function createMde(opts) {
   }
   root.querySelectorAll(".mde-fmt button").forEach(b => b.onclick = () => runCmd(b.dataset.cmd));
   root.querySelectorAll(".mde-modes button").forEach(b => b.onclick = () => { mode = b.dataset.mode; apply(); });
+  root.querySelectorAll("[data-reader-pages]").forEach(b => b.onclick = () => { readerPages = b.dataset.readerPages; renderPreview(); updateReaderControls(); });
+  root.querySelectorAll("[data-reader-zoom]").forEach(b => b.onclick = () => {
+    const action = b.dataset.readerZoom;
+    readerScale = action === "reset" ? 1 : Math.max(.7, Math.min(1.4, readerScale + (action === "in" ? .1 : -.1)));
+    renderPreview(); updateReaderControls();
+  });
 
   apply();
 
