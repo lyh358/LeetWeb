@@ -786,22 +786,30 @@ function renderKb(folderId) {
   const crumbHtml = `<a href="#/kb" class="crumb">知识库</a>` +
     crumbs.map(c => ` <span class="crumb-sep">/</span> <a href="#/kb/f/${c.id}" class="crumb" data-fid="${c.id}">${esc(c.name)}</a>`).join("");
 
-  let grid = "";
-  folders.forEach(f => {
-    grid += `<div class="kb-card folder" data-fid="${f.id}" draggable="true">
+  const folderCards = folders.map(f => `
+    <div class="kb-card folder" data-fid="${f.id}" draggable="true">
       <span class="kb-ic">${ICON.folder}</span>
       <div class="kb-name">${esc(f.name)}</div>
       <div class="kb-actions"><span class="kb-rename" title="重命名">${ICON.pencil}</span><span class="kb-del" title="删除">${ICON.trash}</span></div>
-    </div>`;
-  });
-  notes.forEach(n => {
-    grid += `<div class="kb-card note" data-nid="${n.id}" draggable="true">
+    </div>`).join("");
+  const noteCards = notes.map(n => `
+    <div class="kb-card note" data-nid="${n.id}" draggable="true">
       <span class="kb-ic ${n.kind}">${n.kind === "pdf" ? ICON.file : ICON.note}</span>
       <div class="kb-name">${esc(n.name)}<span class="kb-kind">${n.kind.toUpperCase()}</span></div>
       <div class="kb-actions"><span class="kb-rename" title="重命名">${ICON.pencil}</span><span class="kb-del" title="删除">${ICON.trash}</span></div>
-    </div>`;
-  });
-  if (!folders.length && !notes.length) grid = `<div class="kb-empty"><span class="brush">库</span><p>这里还是空的。新建文件夹归档，或新建 / 上传一篇笔记。</p></div>`;
+    </div>`).join("");
+  const library = !folders.length && !notes.length
+    ? `<div class="kb-empty"><span class="brush">库</span><p>这里还是空的。新建文件夹归档，或新建 / 上传一篇笔记。</p></div>`
+    : `<div class="kb-library">
+        <section class="kb-section kb-folders-section">
+          <div class="kb-section-head"><div><span class="kb-section-kicker">分类</span><h2>文件夹</h2></div><span class="kb-section-count">${folders.length}</span></div>
+          <div class="kb-grid">${folderCards || `<div class="kb-section-empty">当前目录还没有文件夹</div>`}</div>
+        </section>
+        <section class="kb-section kb-notes-section">
+          <div class="kb-section-head"><div><span class="kb-section-kicker">文档</span><h2>笔记</h2></div><span class="kb-section-count">${notes.length}</span></div>
+          <div class="kb-grid">${noteCards || `<div class="kb-section-empty">当前目录还没有笔记</div>`}</div>
+        </section>
+      </div>`;
 
   app.innerHTML = `
   <div class="view"><div class="wrap">
@@ -816,7 +824,7 @@ function renderKb(folderId) {
       <button class="btn" id="kbNewNote">＋ 笔记</button>
       <button class="btn" id="kbUpload">${ICON.upload} 上传文件</button>
     </div>
-    <div class="kb-grid">${grid}</div>
+    ${library}
     <div class="footer"><span class="seal-sm">拾遗</span> · 知识库 · 可将 MD / PDF 文件直接拖入此页上传</div>
     <input type="file" id="kbFileInput" accept="application/pdf,.pdf,.md,.markdown,.txt" multiple hidden />
   </div></div>`;

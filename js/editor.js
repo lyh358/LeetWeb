@@ -47,6 +47,66 @@ function _insertAt(ta, text) {
   const pos = s + text.length; ta.focus(); ta.selectionStart = ta.selectionEnd = pos;
 }
 
+// 将可编辑预览区的常见 HTML 结构转换回 Markdown，供预览模式直接编辑后保存。
+function _previewHtmlToMarkdown(root) {
+  const children = node => [...node.childNodes].map(inline).join("");
+  function inline(node) {
+    if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
+    if (node.nodeType !== Node.ELEMENT_NODE) return "";
+    const tag = node.tagName.toLowerCase();
+    const text = children(node);
+    if (tag === "br") return "\n";
+    if (tag === "strong" || tag === "b") return `**${text}**`;
+    if (tag === "em" || tag === "i") return `_${text}_`;
+    if (tag === "del" || tag === "s") return `~~${text}~~`;
+    if (tag === "mark") {
+      const color = node.classList.contains("highlight-green") ? "green" : node.classList.contains("highlight-pink") ? "pink" : "yellow";
+      return `=={${color}}${text}==`;
+    }
+    if (tag === "code" && (!node.parentElement || node.parentElement.tagName !== "PRE")) return `\`${node.textContent || ""}\``;
+    if (tag === "a") return `[${text}](${node.getAttribute("href") || ""})`;
+    if (tag === "img") return `![${node.getAttribute("alt") || "image"}](${node.getAttribute("src") || ""})`;
+    return text;
+  }
+  function list(el, ordered) {
+    const items = [...el.children].filter(x => x.tagName === "LI");
+    return items.map((li, i) => {
+      const nested = [...li.children].filter(x => x.tagName === "UL" || x.tagName === "OL");
+      const body = [...li.childNodes].filter(x => !(x.nodeType === Node.ELEMENT_NODE && (x.tagName === "UL" || x.tagName === "OL"))).map(inline).join("").trim();
+      const tail = nested.map(x => list(x, x.tagName === "OL").trimEnd().split("\n").map(line => "  " + line).join("\n")).join("\n");
+      return `${ordered ? `${i + 1}. ` : "- "}${body}${tail ? "\n" + tail : ""}`;
+    }).join("\n") + "\n\n";
+  }
+  function table(el) {
+    const rows = [...el.querySelectorAll("tr")].map(tr => [...tr.children].map(cell => children(cell).trim()));
+    if (!rows.length) return "";
+    const width = Math.max(...rows.map(row => row.length));
+    const normalized = rows.map(row => [...row, ...Array(Math.max(0, width - row.length)).fill("")]);
+    const line = row => `| ${row.join(" | ")} |\n`;
+    return line(normalized[0]) + line(Array(width).fill("---")) + normalized.slice(1).map(line).join("") + "\n";
+  }
+  function block(node) {
+    if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
+    if (node.nodeType !== Node.ELEMENT_NODE) return "";
+    const tag = node.tagName.toLowerCase();
+    if (/^h[1-6]$/.test(tag)) return `${"#".repeat(Number(tag[1]))} ${children(node).trim()}\n\n`;
+    if (tag === "p") return `${children(node).trimEnd()}\n\n`;
+    if (tag === "pre") {
+      const code = node.querySelector("code");
+      const cls = code ? [...code.classList].find(x => x.startsWith("language-")) : "";
+      const lang = cls ? cls.slice(9) : "";
+      return `\`\`\`${lang}\n${(node.textContent || "").replace(/\n$/, "")}\n\`\`\`\n\n`;
+    }
+    if (tag === "ul" || tag === "ol") return list(node, tag === "ol");
+    if (tag === "blockquote") return [...node.childNodes].map(block).join("").trim().split("\n").map(line => `> ${line}`).join("\n") + "\n\n";
+    if (tag === "table") return table(node);
+    if (tag === "hr") return "---\n\n";
+    if (tag === "div") return [...node.childNodes].map(block).join("") || `${children(node)}\n`;
+    return inline(node);
+  }
+  return [...root.childNodes].map(block).join("").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+}
+
 const MDE_TOOLS = [
   ["h", "标题", "H"], ["bold", "加粗", "<b>B</b>"], ["italic", "斜体", "<i>I</i>"],
   ["highlight-yellow", "黄色高亮", "<span class=\"mde-highlight-icon yellow\">✦</span>"], ["highlight-green", "绿色高亮", "<span class=\"mde-highlight-icon green\">✦</span>"], ["highlight-pink", "粉色高亮", "<span class=\"mde-highlight-icon pink\">✦</span>"],
@@ -84,7 +144,7 @@ function createMde(opts) {
       <div class="seg mde-modes">
         <button type="button" data-mode="edit">编辑</button>
         <button type="button" data-mode="split">分屏</button>
-        <button type="button" data-mode="view">预览</button>
+        <button type="button" data-mode="view">${opts.documentReader ? "预览编辑" : "预览"}</button>
       </div>
     </div>
     <div class="mde-body">
@@ -111,7 +171,7 @@ function createMde(opts) {
     if (opts.decoratePreview) html += opts.decoratePreview() || "";
     const md = ta.value;
     if (md.trim()) {
-      const content = `<div class="markdown">${renderMarkdown(md)}</div>`;
+      const content = `<div class="markdown" contenteditable="true" spellcheck="false" data-preview-editable="true" role="textbox" aria-label="Markdown 预览编辑区">${renderMarkdown(md)}</div>`;
       html += opts.documentReader
         ? `<div class="md-reader" data-pages="${readerPages}" style="--reader-scale:${readerScale}"><div class="md-reader-stage">${content}</div></div>`
         : content;
@@ -119,6 +179,51 @@ function createMde(opts) {
     if (!html) html = `<div class="empty-note"><span class="brush">墨</span><p>还没有内容。</p></div>`;
     view.innerHTML = html;
     view.querySelectorAll("pre code").forEach(b => { try { hljs.highlightElement(b); } catch (e) {} });
+    const editable = view.querySelector("[data-preview-editable]");
+    if (editable) editable.addEventListener("input", () => syncPreviewSource(editable));
+  }
+  function syncPreviewSource(editable) {
+    ta.value = _previewHtmlToMarkdown(editable);
+    if (opts.onInput) opts.onInput(ta.value);
+  }
+  function selectedPreviewRoot() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return null;
+    const anchor = sel.anchorNode && (sel.anchorNode.nodeType === Node.ELEMENT_NODE ? sel.anchorNode : sel.anchorNode.parentElement);
+    const editable = anchor && anchor.closest && anchor.closest("[data-preview-editable]");
+    return editable && view.contains(editable) ? editable : null;
+  }
+  function highlightPreview(color) {
+    const editable = selectedPreviewRoot();
+    if (!editable) return false;
+    const range = window.getSelection().getRangeAt(0);
+    const walker = document.createTreeWalker(editable, NodeFilter.SHOW_TEXT);
+    const parts = [];
+    let textNode;
+    while ((textNode = walker.nextNode())) {
+      if (!range.intersectsNode(textNode) || textNode.parentElement.closest("pre, code")) continue;
+      const start = textNode === range.startContainer ? range.startOffset : 0;
+      const end = textNode === range.endContainer ? range.endOffset : textNode.nodeValue.length;
+      if (end > start) parts.push({ node: textNode, start, end });
+    }
+    parts.reverse().forEach(part => {
+      const parentMark = part.node.parentElement.closest("mark");
+      if (parentMark) {
+        parentMark.className = `highlight-${color}`;
+        return;
+      }
+      const value = part.node.nodeValue;
+      const fragment = document.createDocumentFragment();
+      fragment.append(document.createTextNode(value.slice(0, part.start)));
+      const mark = document.createElement("mark");
+      mark.className = `highlight-${color}`;
+      mark.textContent = value.slice(part.start, part.end);
+      fragment.append(mark, document.createTextNode(value.slice(part.end)));
+      part.node.replaceWith(fragment);
+    });
+    syncPreviewSource(editable);
+    window.getSelection().removeAllRanges();
+    return true;
   }
   function schedulePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(renderPreview, 140); }
   function apply() {
@@ -152,6 +257,11 @@ function createMde(opts) {
   }
 
   function runCmd(name) {
+    if (name.startsWith("highlight-")) {
+      const color = name.slice("highlight-".length);
+      if (highlightPreview(color)) return;
+      if (mode === "view") { toast("请先在预览中选择要高亮的文字"); return; }
+    }
     switch (name) {
       case "bold": _wrapSel(ta, "**", "**", "粗体"); break;
       case "italic": _wrapSel(ta, "_", "_", "斜体"); break;
@@ -169,7 +279,10 @@ function createMde(opts) {
     }
     ta.dispatchEvent(new Event("input", { bubbles: true }));
   }
-  root.querySelectorAll(".mde-fmt button").forEach(b => b.onclick = () => runCmd(b.dataset.cmd));
+  root.querySelectorAll(".mde-fmt button").forEach(b => {
+    b.addEventListener("mousedown", e => { if (selectedPreviewRoot()) e.preventDefault(); });
+    b.onclick = () => runCmd(b.dataset.cmd);
+  });
   root.querySelectorAll(".mde-modes button").forEach(b => b.onclick = () => { mode = b.dataset.mode; apply(); });
   root.querySelectorAll("[data-reader-pages]").forEach(b => b.onclick = () => { readerPages = b.dataset.readerPages; renderPreview(); updateReaderControls(); });
   root.querySelectorAll("[data-reader-zoom]").forEach(b => b.onclick = () => {
