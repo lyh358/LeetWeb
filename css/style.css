@@ -1399,8 +1399,6 @@ body.resizing-detail { cursor: col-resize; user-select: none; }
 .mde-fmt .mde-highlight-icon.yellow { color: #b7791f; }
 .mde-fmt .mde-highlight-icon.green { color: #32835a; }
 .mde-fmt .mde-highlight-icon.pink { color: #c35a7a; }
-.mde-modes { flex-shrink: 0; }
-.mde-modes button { padding: 5px 11px; font-size: 12.5px; }
 .mde-reader-controls { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
 .mde-reader-controls button {
   min-width: 31px; height: 28px; padding: 0 7px; border: 1px solid transparent; border-radius: 4px;
@@ -1411,22 +1409,11 @@ body.resizing-detail { cursor: col-resize; user-select: none; }
 .reader-divider { width: 1px; height: 17px; margin: 0 3px; background: var(--line-soft); }
 
 .mde-body { flex: 1; min-height: 0; display: flex; }
-.mde-edit { flex: 1; min-width: 0; display: flex; overflow: hidden; }
-.mde-edit .editor { width: 100%; height: 100%; padding: clamp(16px, 2.4vw, 30px); overflow-y: auto; }
 .mde-view { flex: 1; min-width: 0; overflow-y: auto; padding: clamp(16px, 2.4vw, 30px); background: var(--bg-soft); }
-
-.mde[data-mode="edit"] .mde-view { display: none; }
-.mde[data-mode="edit"] .mde-edit { display: flex; }
-.mde[data-mode="view"] .mde-edit { display: none; }
-.mde[data-mode="view"] .mde-view { display: block; }
-.mde[data-mode="split"] .mde-edit { display: flex; }
-.mde[data-mode="split"] .mde-view { display: block; border-left: 1px solid var(--line-soft); }
 
 /* 独立 Markdown 文件的纸张阅读器 */
 .mde.document-reader .mde-view { padding: 28px; align-items: flex-start; justify-content: safe center; }
-.mde.document-reader[data-mode="view"] .mde-view,
-.mde.document-reader[data-mode="split"] .mde-view { display: flex; }
-.mde.document-reader[data-mode="edit"] .mde-reader-controls { visibility: hidden; pointer-events: none; }
+.mde.document-reader .mde-view { display: flex; }
 .md-reader { flex: 0 0 auto; padding-bottom: 28px; }
 .md-reader-stage {
   position: relative; width: 794px; min-height: 1123px; box-sizing: border-box;
@@ -1439,6 +1426,9 @@ body.resizing-detail { cursor: col-resize; user-select: none; }
 }
 .markdown[data-preview-editable="true"] { outline: none; caret-color: var(--accent); cursor: text; }
 .markdown[data-preview-editable="true"]:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-soft) 42%, transparent); }
+.markdown[data-preview-editable="true"]:empty::before {
+  content: attr(data-placeholder); color: var(--ink-faint); pointer-events: none; white-space: pre-wrap;
+}
 .md-reader[data-pages="two"] .md-reader-stage {
   width: 1648px; background: transparent; box-shadow: none;
 }
@@ -1454,8 +1444,6 @@ body.resizing-detail { cursor: col-resize; user-select: none; }
 .md-reader[data-pages="two"] .markdown > * { break-inside: avoid-column; }
 
 @media (max-width: 720px) {
-  .mde[data-mode="split"] .mde-body { flex-direction: column; }
-  .mde[data-mode="split"] .mde-view { border-left: 0; border-top: 1px solid var(--line-soft); }
   .mde-reader-controls { order: 4; width: 100%; justify-content: flex-end; }
   .mde.document-reader .mde-view { padding: 14px; }
   .md-reader-stage, .md-reader[data-pages="two"] .md-reader-stage { width: min(794px, calc(100vw - 28px)); min-height: 0; zoom: 1; }

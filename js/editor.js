@@ -1,6 +1,6 @@
 /* =========================================================
    公共 Markdown 编辑器组件
-   工具栏 · 图片粘贴/插入 · 编辑 / 分屏 / 预览 三态实时渲染
+   工具栏 · 图片粘贴/插入 · 单界面所见即所得编辑
    依赖全局：renderMarkdown, hljs, toast
    用法：const mde = createMde({...}); mount.appendChild(mde.el);
    ========================================================= */
@@ -145,7 +145,7 @@ const MDE_TOOLS = [
   opts:
     value            初始文本
     placeholder      占位符
-    mode             'edit' | 'split' | 'view'（默认 edit）
+    mode             兼容旧调用；单界面编辑器始终处于 live 模式
     onInput(value)   每次输入回调（用于自动保存，调用方自行防抖）
     decoratePreview()  可选，返回预览区顶部要额外插入的 HTML（如 PDF）
     documentReader    启用 A4 阅读版式与单双页、缩放控制
@@ -168,14 +168,9 @@ function createMde(opts) {
         <button type="button" data-reader-zoom="reset" title="重置缩放">100%</button>
         <button type="button" data-reader-zoom="in" title="放大">＋</button>
       </div>` : ""}
-      <div class="seg mde-modes">
-        <button type="button" data-mode="edit">编辑</button>
-        <button type="button" data-mode="split">分屏</button>
-        <button type="button" data-mode="view">${opts.documentReader ? "预览编辑" : "预览"}</button>
-      </div>
     </div>
     <div class="mde-body">
-      <div class="mde-edit"><textarea class="editor mde-ta" spellcheck="false"></textarea></div>
+      <textarea class="mde-ta" hidden aria-hidden="true"></textarea>
       <div class="mde-view"></div>
     </div>`;
 
@@ -183,8 +178,8 @@ function createMde(opts) {
   const view = root.querySelector(".mde-view");
   ta.value = opts.value || "";
   ta.placeholder = opts.placeholder || "";
-  let mode = opts.mode || "edit";
-  let previewTimer = null, imgInput = null;
+  const mode = "view";
+  let imgInput = null;
   let readerPages = "one", readerScale = 1;
 
   function updateReaderControls() {
@@ -197,17 +192,14 @@ function createMde(opts) {
     let html = "";
     if (opts.decoratePreview) html += opts.decoratePreview() || "";
     const md = ta.value;
-    if (md.trim()) {
-      const content = `<div class="markdown" contenteditable="true" spellcheck="false" data-preview-editable="true" role="textbox" aria-label="Markdown 预览编辑区">${renderMarkdown(md)}</div>`;
-      html += opts.documentReader
-        ? `<div class="md-reader" data-pages="${readerPages}" style="--reader-scale:${readerScale}"><div class="md-reader-stage">${content}</div></div>`
-        : content;
-    }
-    if (!html) html = `<div class="empty-note"><span class="brush">墨</span><p>还没有内容。</p></div>`;
+    const content = `<div class="markdown" contenteditable="true" spellcheck="true" data-preview-editable="true" data-placeholder="${(ta.placeholder || "在这里开始书写…").replace(/&/g, "&amp;").replace(/"/g, "&quot;")}" role="textbox" aria-multiline="true" aria-label="Markdown 实时编辑区">${md.trim() ? renderMarkdown(md) : ""}</div>`;
+    html += opts.documentReader
+      ? `<div class="md-reader" data-pages="${readerPages}" style="--reader-scale:${readerScale}"><div class="md-reader-stage">${content}</div></div>`
+      : content;
     view.innerHTML = html;
     view.querySelectorAll("pre code").forEach(b => { try { hljs.highlightElement(b); } catch (e) {} });
     const editable = view.querySelector("[data-preview-editable]");
-    if (editable) editable.addEventListener("input", () => syncPreviewSource(editable));
+    if (editable) bindLiveEditor(editable);
   }
   function syncPreviewSource(editable) {
     ta.value = _previewHtmlToMarkdown(editable);
@@ -231,7 +223,9 @@ function createMde(opts) {
       if (!range.intersectsNode(textNode) || textNode.parentElement.closest("pre, code")) continue;
       const start = textNode === range.startContainer ? range.startOffset : 0;
       const end = textNode === range.endContainer ? range.endOffset : textNode.nodeValue.length;
-      if (end > start) parts.push({ node: textNode, start, end });
+      // Ctrl/Cmd+A 在 contenteditable 中常会把段落间的换行文本也选中；
+      // 不给纯空白节点套 mark，否则保存时会产生一段孤立的 ==...== 源码。
+      if (end > start && textNode.nodeValue.slice(start, end).trim()) parts.push({ node: textNode, start, end });
     }
     const marks = [...new Set(parts.map(part => part.node.parentElement.closest("mark")).filter(Boolean))];
     const removeHighlight = parts.length > 0 && parts.every(part => {
@@ -263,32 +257,68 @@ function createMde(opts) {
     window.getSelection().removeAllRanges();
     return true;
   }
-  function schedulePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(renderPreview, 140); }
-  function apply() {
-    root.dataset.mode = mode;
-    root.querySelectorAll(".mde-modes button").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
-    updateReaderControls();
-    if (mode !== "edit") renderPreview();
-    if (opts.onModeChange) opts.onModeChange(mode);
-  }
 
-  ta.addEventListener("input", () => { if (mode === "split") schedulePreview(); if (opts.onInput) opts.onInput(ta.value); });
-  ta.addEventListener("keydown", e => {
-    if (e.key === "Tab") { e.preventDefault(); _insertAt(ta, "  "); }
-    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") { e.preventDefault(); runCmd("bold"); }
-    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "i") { e.preventDefault(); runCmd("italic"); }
-  });
+  function activeEditor() {
+    const editable = view.querySelector("[data-preview-editable]");
+    return editable && (editable.contains(document.activeElement) || document.activeElement === editable || selectedPreviewRoot()) ? editable : null;
+  }
+  function execLive(command, value) {
+    const editable = activeEditor();
+    if (!editable) { view.querySelector("[data-preview-editable]")?.focus(); }
+    document.execCommand(command, false, value || null);
+    const current = view.querySelector("[data-preview-editable]");
+    if (current) syncPreviewSource(current);
+  }
+  function insertLiveNode(node) {
+    const editable = view.querySelector("[data-preview-editable]");
+    if (!editable) return;
+    editable.focus();
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && editable.contains(sel.anchorNode)) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents(); range.insertNode(node); range.setStartAfter(node); range.collapse(true);
+      sel.removeAllRanges(); sel.addRange(range);
+    } else editable.append(node);
+    syncPreviewSource(editable);
+  }
+  function bindLiveEditor(editable) {
+    editable.addEventListener("input", () => syncPreviewSource(editable));
+    editable.addEventListener("keydown", e => {
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+      if (e.key === "Tab") { e.preventDefault(); document.execCommand("insertText", false, "  "); }
+      else if (mod && key === "b") { e.preventDefault(); runCmd("bold"); }
+      else if (mod && key === "i") { e.preventDefault(); runCmd("italic"); }
+      else if (mod && key === "k") { e.preventDefault(); runCmd("link"); }
+      else if (mod && key === "s") {
+        e.preventDefault();
+        // 兼容各业务模块原先绑定在 textarea 上的手动保存处理器。
+        ta.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: e.ctrlKey, metaKey: e.metaKey, bubbles: true, cancelable: true }));
+      }
+      else if (mod && e.shiftKey && e.key === "7") { e.preventDefault(); runCmd("ol"); }
+      else if (mod && e.shiftKey && e.key === "8") { e.preventDefault(); runCmd("ul"); }
+      else if (mod && e.altKey && /^[1-6]$/.test(e.key)) { e.preventDefault(); execLive("formatBlock", `h${e.key}`); }
+    });
+    editable.addEventListener("paste", e => {
+      const items = (e.clipboardData && e.clipboardData.items) || [];
+      for (const it of items) if (it.type && it.type.startsWith("image/")) { e.preventDefault(); insertImage(it.getAsFile()); break; }
+    });
+    editable.addEventListener("blur", () => setTimeout(() => {
+      if (!root.contains(document.activeElement)) renderPreview();
+    }, 0));
+  }
 
   // 图片：粘贴 或 工具栏按钮
   async function insertImage(file) {
     if (!file || !/^image\//.test(file.type)) return;
-    try { const url = await imageToDataUrl(file); _insertAt(ta, `![${(file.name || "image").replace(/\.[^.]+$/, "")}](${url})\n`); ta.dispatchEvent(new Event("input")); toast("已插入图片"); }
+    try {
+      const url = await imageToDataUrl(file);
+      const img = document.createElement("img");
+      img.src = url; img.alt = (file.name || "image").replace(/\.[^.]+$/, "");
+      insertLiveNode(img); toast("已插入图片");
+    }
     catch (e) { toast("图片插入失败：" + e.message); }
   }
-  ta.addEventListener("paste", e => {
-    const items = (e.clipboardData && e.clipboardData.items) || [];
-    for (const it of items) { if (it.type && it.type.startsWith("image/")) { e.preventDefault(); insertImage(it.getAsFile()); break; } }
-  });
   function pickImage() {
     if (!imgInput) { imgInput = document.createElement("input"); imgInput.type = "file"; imgInput.accept = "image/*"; imgInput.onchange = () => { const f = imgInput.files[0]; imgInput.value = ""; insertImage(f); }; }
     imgInput.click();
@@ -298,7 +328,32 @@ function createMde(opts) {
     if (name.startsWith("highlight-")) {
       const color = name.slice("highlight-".length);
       if (highlightPreview(color)) return;
-      if (mode === "view") { toast("请先在预览中选择要高亮的文字"); return; }
+      toast("请先选择要高亮的文字"); return;
+    }
+    if (activeEditor()) {
+      switch (name) {
+        case "bold": execLive("bold"); return;
+        case "italic": execLive("italic"); return;
+        case "h": execLive("formatBlock", "h2"); return;
+        case "quote": execLive("formatBlock", "blockquote"); return;
+        case "ul": execLive("insertUnorderedList"); return;
+        case "ol": execLive("insertOrderedList"); return;
+        case "link": {
+          const href = window.prompt("链接地址", "https://");
+          if (href) execLive("createLink", href);
+          return;
+        }
+        case "code": {
+          const code = document.createElement("code");
+          const sel = window.getSelection(); code.textContent = sel && !sel.isCollapsed ? sel.toString() : "code";
+          insertLiveNode(code); return;
+        }
+        case "codeblock": {
+          const pre = document.createElement("pre"), code = document.createElement("code");
+          const sel = window.getSelection(); code.textContent = sel && !sel.isCollapsed ? sel.toString() : "代码";
+          pre.append(code); insertLiveNode(pre); return;
+        }
+      }
     }
     switch (name) {
       case "bold": _wrapSel(ta, "**", "**", "粗体"); break;
@@ -318,10 +373,9 @@ function createMde(opts) {
     ta.dispatchEvent(new Event("input", { bubbles: true }));
   }
   root.querySelectorAll(".mde-fmt button").forEach(b => {
-    b.addEventListener("mousedown", e => { if (selectedPreviewRoot()) e.preventDefault(); });
+    b.addEventListener("mousedown", e => e.preventDefault());
     b.onclick = () => runCmd(b.dataset.cmd);
   });
-  root.querySelectorAll(".mde-modes button").forEach(b => b.onclick = () => { mode = b.dataset.mode; apply(); });
   root.querySelectorAll("[data-reader-pages]").forEach(b => b.onclick = () => { readerPages = b.dataset.readerPages; renderPreview(); updateReaderControls(); });
   root.querySelectorAll("[data-reader-zoom]").forEach(b => b.onclick = () => {
     const action = b.dataset.readerZoom;
@@ -329,16 +383,18 @@ function createMde(opts) {
     renderPreview(); updateReaderControls();
   });
 
-  apply();
+  updateReaderControls();
+  renderPreview();
+  if (opts.onModeChange) opts.onModeChange(mode);
 
   return {
     el: root,
     get: () => ta.value,
-    set: v => { ta.value = v || ""; if (mode !== "edit") renderPreview(); },
+    set: v => { ta.value = v || ""; renderPreview(); },
     getMode: () => mode,
-    setMode: m => { mode = m; apply(); },
-    refresh: () => { if (mode !== "edit") renderPreview(); },
-    focus: () => ta.focus(),
+    setMode: () => { renderPreview(); },
+    refresh: renderPreview,
+    focus: () => view.querySelector("[data-preview-editable]")?.focus(),
     textarea: ta,
   };
 }

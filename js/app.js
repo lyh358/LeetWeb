@@ -297,30 +297,48 @@ if (window.marked) {
 function applyMarkdownHighlights(html) {
   const tpl = document.createElement("template");
   tpl.innerHTML = html;
-  const walker = document.createTreeWalker(tpl.content, NodeFilter.SHOW_TEXT);
-  const textNodes = [];
-  let node;
-  while ((node = walker.nextNode())) {
-    if (!node.parentElement || node.parentElement.closest("code, pre, mark, script, style")) continue;
-    if (node.nodeValue.includes("==")) textNodes.push(node);
-  }
-  textNodes.forEach(textNode => {
-    const text = textNode.nodeValue;
-    const re = /==(?:\{(yellow|green|pink)\})?(\S(?:[\s\S]*?\S)?)==/g;
-    let match, lastIndex = 0;
-    const fragment = document.createDocumentFragment();
-    while ((match = re.exec(text))) {
-      fragment.append(document.createTextNode(text.slice(lastIndex, match.index)));
+  // Marked 会先把 **粗体** 等语法拆成元素。高亮的开、闭标记因此可能落在
+  // 不同文本节点里；用 DOM Range 跨节点包裹，避免把 ==...== 当源码露出来。
+  const blockSelector = "p, li, h1, h2, h3, h4, h5, h6, td, th";
+  const containers = [...tpl.content.querySelectorAll(blockSelector)];
+  containers.forEach(container => {
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        return node.parentElement && node.parentElement.closest(blockSelector) === container
+          && !node.parentElement.closest("code, pre, mark, script, style")
+          ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      },
+    });
+    const nodes = [];
+    let node, text = "";
+    while ((node = walker.nextNode())) {
+      nodes.push({ node, start: text.length, end: text.length + node.nodeValue.length });
+      text += node.nodeValue;
+    }
+    const matches = [...text.matchAll(/==(?:\{(yellow|green|pink)\})?(\S(?:[\s\S]*?\S)?)==/g)];
+    matches.reverse().forEach(match => {
+      const startPart = nodes.find(part => match.index >= part.start && match.index < part.end);
+      const matchEnd = match.index + match[0].length;
+      const endPart = nodes.find(part => matchEnd > part.start && matchEnd <= part.end);
+      if (!startPart || !endPart) return;
+      const range = document.createRange();
+      range.setStart(startPart.node, match.index - startPart.start);
+      range.setEnd(endPart.node, matchEnd - endPart.start);
+      const fragment = range.extractContents();
+      const fragmentWalker = document.createTreeWalker(fragment, NodeFilter.SHOW_TEXT);
+      const fragmentNodes = [];
+      let fragmentNode;
+      while ((fragmentNode = fragmentWalker.nextNode())) fragmentNodes.push(fragmentNode);
+      if (!fragmentNodes.length) return;
+      const openerLength = match[0].length - match[2].length - 2;
+      fragmentNodes[0].nodeValue = fragmentNodes[0].nodeValue.slice(openerLength);
+      const last = fragmentNodes[fragmentNodes.length - 1];
+      last.nodeValue = last.nodeValue.slice(0, -2);
       const mark = document.createElement("mark");
       if (match[1]) mark.className = `highlight-${match[1]}`;
-      mark.textContent = match[2];
-      fragment.append(mark);
-      lastIndex = match.index + match[0].length;
-    }
-    if (lastIndex) {
-      fragment.append(document.createTextNode(text.slice(lastIndex)));
-      textNode.replaceWith(fragment);
-    }
+      mark.append(fragment);
+      range.insertNode(mark);
+    });
   });
   return tpl.innerHTML;
 }
