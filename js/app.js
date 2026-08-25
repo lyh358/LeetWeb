@@ -347,6 +347,61 @@ function renderMarkdown(md) {
   const clean = window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
   return applyMarkdownHighlights(clean);
 }
+let markdownDiagramId = 0;
+if (window.mermaid) {
+  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "neutral" });
+}
+
+async function renderMarkdownDiagrams(container) {
+  if (!container) return;
+  const blocks = [...container.querySelectorAll("pre code.language-mermaid, pre code.language-flowchart, pre code.language-flow")];
+  for (const block of blocks) {
+    const pre = block.parentElement;
+    if (!pre || pre.dataset.diagramRendered) continue;
+    const source = block.textContent || "";
+    const language = block.classList.contains("language-mermaid") ? "mermaid" : "flowchart";
+    const useMermaid = language === "mermaid" || /^\s*(?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap|timeline)\b/i.test(source);
+    const diagram = document.createElement("div");
+    diagram.className = "markdown-diagram";
+    diagram.contentEditable = "false";
+    diagram.dataset.diagramSource = source;
+    diagram.dataset.diagramLanguage = language;
+    diagram.setAttribute("aria-label", "流程图");
+    try {
+      if (useMermaid) {
+        if (!window.mermaid) continue;
+        const result = await mermaid.render(`leetweb-diagram-${++markdownDiagramId}`, source);
+        diagram.innerHTML = result.svg;
+      } else {
+        if (!window.flowchart) continue;
+        diagram.id = `leetweb-flowchart-${++markdownDiagramId}`;
+        pre.insertAdjacentElement("afterend", diagram);
+        const styles = getComputedStyle(document.documentElement);
+        flowchart.parse(source).drawSVG(diagram.id, {
+          "line-width": 2,
+          "line-length": 38,
+          "text-margin": 12,
+          "font-size": 14,
+          "font-family": styles.getPropertyValue("--sans").trim() || "sans-serif",
+          "font-color": styles.getPropertyValue("--ink").trim(),
+          "line-color": styles.getPropertyValue("--accent").trim(),
+          "element-color": styles.getPropertyValue("--accent").trim(),
+          fill: styles.getPropertyValue("--surface").trim(),
+          "yes-text": "是",
+          "no-text": "否",
+          "arrow-end": "block",
+          scale: 1,
+        });
+      }
+      if (!diagram.isConnected) pre.insertAdjacentElement("afterend", diagram);
+      pre.dataset.diagramRendered = "true";
+      pre.hidden = true;
+    } catch (error) {
+      diagram.remove();
+      pre.dataset.diagramError = error.message || "流程图语法错误";
+    }
+  }
+}
 // 把 markdown 渲染进容器并高亮代码块
 function renderMarkdownInto(el, md) {
   el.innerHTML = `<div class="markdown">${renderMarkdown(md)}</div>`;
@@ -355,6 +410,7 @@ function renderMarkdownInto(el, md) {
       try { hljs.highlightElement(block); } catch (e) {}
     });
   }
+  renderMarkdownDiagrams(el);
 }
 // 代码高亮主题随明暗切换
 function syncHljsTheme(t) {

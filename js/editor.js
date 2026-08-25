@@ -115,6 +115,7 @@ function _previewHtmlToMarkdown(root) {
   function block(node) {
     if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
     if (node.nodeType !== Node.ELEMENT_NODE) return "";
+    if (node.classList.contains("markdown-diagram")) return "";
     const tag = node.tagName.toLowerCase();
     if (/^h[1-6]$/.test(tag)) return `${"#".repeat(Number(tag[1]))} ${children(node).trim()}\n\n`;
     if (tag === "p") return `${children(node).trimEnd()}\n\n`;
@@ -156,6 +157,7 @@ function createMde(opts) {
   root.className = "mde" + (opts.documentReader ? " document-reader" : "");
   root.innerHTML = `
     <div class="mde-tools">
+      <button type="button" class="mde-outline-toggle" title="显示或隐藏文档大纲" aria-label="显示或隐藏文档大纲" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6h4M4 12h4M4 18h4M11 6h9M11 12h9M11 18h9"/></svg></button>
       <div class="mde-fmt">
         ${MDE_TOOLS.map(([c, t, l]) => `<button type="button" data-cmd="${c}" title="${t}">${l}</button>`).join("")}
       </div>
@@ -170,17 +172,105 @@ function createMde(opts) {
       </div>` : ""}
     </div>
     <div class="mde-body">
+      <aside class="mde-outline" aria-label="文档大纲" hidden>
+        <div class="mde-outline-head"><span>文档大纲</span><button type="button" class="mde-outline-collapse" title="折叠全部章节" aria-label="折叠全部章节"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m7 10 5 5 5-5M4 5h16"/></svg></button></div>
+        <nav class="mde-outline-list" aria-label="标题导航"></nav>
+      </aside>
       <textarea class="mde-ta" hidden aria-hidden="true"></textarea>
       <div class="mde-view"></div>
     </div>`;
 
   const ta = root.querySelector(".mde-ta");
   const view = root.querySelector(".mde-view");
+  const outline = root.querySelector(".mde-outline");
+  const outlineList = root.querySelector(".mde-outline-list");
+  const outlineToggle = root.querySelector(".mde-outline-toggle");
+  const collapsedHeadings = new Set();
   ta.value = opts.value || "";
   ta.placeholder = opts.placeholder || "";
   const mode = "view";
   let imgInput = null;
   let readerPages = "one", readerScale = 1;
+
+  function updateOutline() {
+    const headings = [...view.querySelectorAll(".markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6")];
+    if (!headings.length) {
+      outlineList.innerHTML = '<div class="mde-outline-empty">暂无标题</div>';
+      return;
+    }
+    const ids = new Map();
+    const minLevel = Math.min(...headings.map(heading => Number(heading.tagName.slice(1))));
+    const items = headings.map((heading, index) => {
+      const text = heading.textContent.trim() || "无标题";
+      const base = text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "") || "section";
+      const count = ids.get(base) || 0;
+      ids.set(base, count + 1);
+      heading.id = `${base}${count ? `-${count}` : ""}`;
+      const level = Number(heading.tagName.slice(1));
+      const next = headings[index + 1];
+      return { heading, text, level, depth: level - minLevel, hasChildren: !!next && Number(next.tagName.slice(1)) > level };
+    });
+    outlineList.innerHTML = "";
+    const hiddenParents = [];
+    items.forEach(item => {
+      while (hiddenParents.length && item.level <= hiddenParents[hiddenParents.length - 1]) hiddenParents.pop();
+      const row = document.createElement("div");
+      row.className = "mde-outline-item";
+      row.style.setProperty("--outline-depth", String(item.depth));
+      row.hidden = hiddenParents.length > 0;
+      const fold = document.createElement("button");
+      fold.type = "button";
+      fold.className = "mde-outline-fold";
+      fold.innerHTML = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m7 5 5 5-5 5"/></svg>';
+      fold.disabled = !item.hasChildren;
+      fold.classList.toggle("collapsed", collapsedHeadings.has(item.heading.id));
+      fold.title = collapsedHeadings.has(item.heading.id) ? "展开章节" : "折叠章节";
+      fold.onclick = () => {
+        if (collapsedHeadings.has(item.heading.id)) collapsedHeadings.delete(item.heading.id);
+        else collapsedHeadings.add(item.heading.id);
+        updateOutline();
+      };
+      const link = document.createElement("button");
+      link.type = "button";
+      link.className = "mde-outline-link";
+      link.textContent = item.text;
+      link.title = item.text;
+      link.dataset.target = item.heading.id;
+      link.onclick = () => {
+        item.heading.scrollIntoView({ behavior: "smooth", block: "start" });
+        outlineList.querySelectorAll(".mde-outline-link").forEach(entry => entry.classList.toggle("active", entry === link));
+      };
+      row.append(fold, link);
+      outlineList.append(row);
+      if (collapsedHeadings.has(item.heading.id) && item.hasChildren) hiddenParents.push(item.level);
+    });
+  }
+
+  outlineToggle.onclick = () => {
+    const open = outline.hidden;
+    outline.hidden = !open;
+    root.classList.toggle("outline-open", open);
+    outlineToggle.classList.toggle("active", open);
+    outlineToggle.setAttribute("aria-expanded", String(open));
+    if (open) updateOutline();
+  };
+  root.querySelector(".mde-outline-collapse").onclick = () => {
+    const headings = [...view.querySelectorAll(".markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6")];
+    const shouldExpand = collapsedHeadings.size > 0;
+    collapsedHeadings.clear();
+    if (!shouldExpand) headings.forEach((heading, index) => {
+      const next = headings[index + 1];
+      if (next && Number(next.tagName.slice(1)) > Number(heading.tagName.slice(1))) collapsedHeadings.add(heading.id);
+    });
+    updateOutline();
+  };
+  view.addEventListener("scroll", () => {
+    if (outline.hidden) return;
+    const headings = [...view.querySelectorAll(".markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6")];
+    const top = view.getBoundingClientRect().top + 48;
+    const current = [...headings].reverse().find(heading => heading.getBoundingClientRect().top <= top) || headings[0];
+    outlineList.querySelectorAll(".mde-outline-link").forEach(link => link.classList.toggle("active", !!current && link.dataset.target === current.id));
+  }, { passive: true });
 
   function updateReaderControls() {
     root.querySelectorAll("[data-reader-pages]").forEach(b => b.classList.toggle("active", b.dataset.readerPages === readerPages));
@@ -198,11 +288,14 @@ function createMde(opts) {
       : content;
     view.innerHTML = html;
     view.querySelectorAll("pre code").forEach(b => { try { hljs.highlightElement(b); } catch (e) {} });
+    renderMarkdownDiagrams(view);
     const editable = view.querySelector("[data-preview-editable]");
     if (editable) bindLiveEditor(editable);
+    updateOutline();
   }
   function syncPreviewSource(editable) {
     ta.value = _previewHtmlToMarkdown(editable);
+    if (!outline.hidden) updateOutline();
     if (opts.onInput) opts.onInput(ta.value);
   }
   function selectedPreviewRoot() {

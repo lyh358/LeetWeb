@@ -1386,6 +1386,14 @@ body.resizing-detail { cursor: col-resize; user-select: none; }
   background: color-mix(in srgb, var(--surface) 70%, transparent);
 }
 .mde-tools .spacer { flex: 1; min-width: 12px; }
+.mde-outline-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; flex-shrink: 0; margin-right: 4px;
+  border: 1px solid transparent; border-radius: var(--radius);
+  background: transparent; color: var(--ink-soft); cursor: pointer;
+}
+.mde-outline-toggle svg { width: 18px; height: 18px; }
+.mde-outline-toggle:hover, .mde-outline-toggle.active { color: var(--accent); border-color: var(--line); background: var(--surface); }
 .mde-fmt { display: flex; gap: 2px; flex-wrap: wrap; }
 .mde-fmt button {
   width: 30px; height: 30px; border: 1px solid transparent; border-radius: 5px;
@@ -1409,7 +1417,46 @@ body.resizing-detail { cursor: col-resize; user-select: none; }
 .reader-divider { width: 1px; height: 17px; margin: 0 3px; background: var(--line-soft); }
 
 .mde-body { flex: 1; min-height: 0; display: flex; }
+.mde-outline {
+  width: clamp(190px, 22%, 265px); flex: 0 0 clamp(190px, 22%, 265px);
+  min-width: 0; overflow-y: auto; border-right: 1px solid var(--line-soft);
+  background: var(--surface); color: var(--ink);
+}
+.mde-outline[hidden] { display: none; }
+.mde-outline-head {
+  position: sticky; top: 0; z-index: 1; display: flex; align-items: center;
+  justify-content: space-between; height: 48px; padding: 0 12px 0 15px;
+  border-bottom: 1px solid var(--line-soft); background: var(--surface);
+  color: var(--ink-soft); font-size: 12px; font-weight: 600;
+}
+.mde-outline-collapse, .mde-outline-fold {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 25px; height: 25px; padding: 0; flex-shrink: 0;
+  border: 0; border-radius: var(--radius); background: transparent;
+  color: var(--ink-faint); cursor: pointer;
+}
+.mde-outline-collapse svg, .mde-outline-fold svg { width: 16px; height: 16px; }
+.mde-outline-collapse:hover, .mde-outline-fold:hover { color: var(--ink); background: var(--surface-2); }
+.mde-outline-fold svg { transform: rotate(90deg); transition: transform .18s ease; }
+.mde-outline-fold.collapsed svg { transform: rotate(0); }
+.mde-outline-fold:disabled { visibility: hidden; }
+.mde-outline-list { padding: 9px 7px 14px; }
+.mde-outline-item { display: flex; align-items: center; min-height: 32px; padding-left: calc(var(--outline-depth) * 13px); }
+.mde-outline-item[hidden] { display: none; }
+.mde-outline-link {
+  min-width: 0; flex: 1; padding: 6px 7px; border: 0; border-radius: var(--radius);
+  background: transparent; color: var(--ink-soft); font: 12px var(--sans);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; cursor: pointer;
+}
+.mde-outline-link:hover, .mde-outline-link.active { color: var(--accent); background: var(--surface-2); }
+.mde-outline-empty { padding: 16px 9px; color: var(--ink-faint); font-size: 12px; }
 .mde-view { flex: 1; min-width: 0; overflow-y: auto; padding: clamp(16px, 2.4vw, 30px); background: var(--bg-soft); }
+.markdown-diagram {
+  display: flex; justify-content: center; width: 100%; max-width: 100%;
+  margin: 1.2em 0; padding: 18px; overflow-x: auto; border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg); background: var(--surface);
+}
+.markdown-diagram svg { max-width: 100%; height: auto; }
 
 /* 独立 Markdown 文件的纸张阅读器 */
 .mde.document-reader .mde-view { padding: 28px; align-items: flex-start; justify-content: safe center; }
@@ -1444,6 +1491,8 @@ body.resizing-detail { cursor: col-resize; user-select: none; }
 .md-reader[data-pages="two"] .markdown > * { break-inside: avoid-column; }
 
 @media (max-width: 720px) {
+  .mde-body { position: relative; }
+  .mde-outline { position: absolute; inset: 0 auto 0 0; z-index: 8; width: min(270px, 76vw); box-shadow: var(--shadow); }
   .mde-reader-controls { order: 4; width: 100%; justify-content: flex-end; }
   .mde.document-reader .mde-view { padding: 14px; }
   .md-reader-stage, .md-reader[data-pages="two"] .md-reader-stage { width: min(794px, calc(100vw - 28px)); min-height: 0; zoom: 1; }
