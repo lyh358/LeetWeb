@@ -110,6 +110,10 @@ function _toggleHighlightSel(ta, color, placeholder) {
 
 // 将可编辑预览区的常见 HTML 结构转换回 Markdown，供预览模式直接编辑后保存。
 function _previewHtmlToMarkdown(root) {
+  function wrapInline(text, before, after) {
+    const match = String(text || "").match(/^(\s*)([\s\S]*?\S)(\s*)$/);
+    return match ? `${match[1]}${before}${match[2]}${after}${match[3]}` : text;
+  }
   function math(node) {
     let source = node.dataset.mathSource || "";
     try { source = decodeURIComponent(source); } catch (error) {}
@@ -123,12 +127,20 @@ function _previewHtmlToMarkdown(root) {
     const tag = node.tagName.toLowerCase();
     const text = children(node);
     if (tag === "br") return "\n";
-    if (tag === "strong" || tag === "b") return `**${text}**`;
-    if (tag === "em" || tag === "i") return `_${text}_`;
-    if (tag === "del" || tag === "s") return `~~${text}~~`;
+    if (tag === "strong" || tag === "b") return wrapInline(text, "**", "**");
+    if (tag === "em" || tag === "i") return wrapInline(text, "_", "_");
+    if (tag === "del" || tag === "s") return wrapInline(text, "~~", "~~");
     if (tag === "mark") {
       const color = node.classList.contains("highlight-green") ? "green" : node.classList.contains("highlight-pink") ? "pink" : "yellow";
-      return `=={${color}}${text}==`;
+      return wrapInline(text, `=={${color}}`, "==");
+    }
+    if (tag === "span" && node.hasAttribute("style")) {
+      const style = node.style;
+      let formatted = text;
+      if (style.textDecorationLine.includes("line-through") || style.textDecoration.includes("line-through")) formatted = wrapInline(formatted, "~~", "~~");
+      if (style.fontStyle === "italic") formatted = wrapInline(formatted, "_", "_");
+      if (style.fontWeight === "bold" || Number(style.fontWeight) >= 600) formatted = wrapInline(formatted, "**", "**");
+      return formatted;
     }
     if (tag === "code" && (!node.parentElement || node.parentElement.tagName !== "PRE")) return `\`${node.textContent || ""}\``;
     if (tag === "a") return `[${text}](${node.getAttribute("href") || ""})`;
@@ -191,7 +203,7 @@ const MDE_TOOL_GROUPS = [
     ["bold", "加粗 (Ctrl/⌘ B)", "<b>B</b>"], ["italic", "斜体 (Ctrl/⌘ I)", "<i>I</i>"], ["strike", "删除线", "<s>S</s>"],
   ],
   [
-    ["highlight-yellow", "黄色高亮", '<span class="mde-highlight-icon yellow">✦</span>'], ["highlight-green", "绿色高亮", '<span class="mde-highlight-icon green">✦</span>'], ["highlight-pink", "粉色高亮", '<span class="mde-highlight-icon pink">✦</span>'],
+    ["highlight-yellow", "黄色高亮 (Ctrl/⌘ Q)", '<span class="mde-highlight-icon yellow">✦</span>'], ["highlight-green", "绿色高亮 (Ctrl/⌘ W)", '<span class="mde-highlight-icon green">✦</span>'], ["highlight-pink", "粉色高亮 (Ctrl/⌘ E)", '<span class="mde-highlight-icon pink">✦</span>'],
   ],
   [
     ["code", "行内代码", "&lt;/&gt;"], ["codeblock", "代码块", "{ }"], ["quote", "引用", "❝"],
@@ -404,6 +416,20 @@ function createMde(opts) {
     const editable = anchor && anchor.closest && anchor.closest("[data-preview-editable]");
     return editable && view.contains(editable) ? editable : null;
   }
+  function retainLiveSelection(nodes) {
+    const connected = [...new Set(nodes)].filter(node => node && node.isConnected);
+    if (!connected.length) return;
+    connected.sort((a, b) => {
+      if (a === b) return 0;
+      return a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+    });
+    const range = document.createRange();
+    range.setStartBefore(connected[0]);
+    range.setEndAfter(connected[connected.length - 1]);
+    const selection = window.getSelection();
+    selection.removeAllRanges(); selection.addRange(range);
+    rememberLiveSelection();
+  }
   function highlightPreview(color) {
     const editable = selectedPreviewRoot();
     if (!editable) return false;
@@ -412,7 +438,7 @@ function createMde(opts) {
     const parts = [];
     let textNode;
     while ((textNode = walker.nextNode())) {
-      if (!range.intersectsNode(textNode) || textNode.parentElement.closest("pre, code")) continue;
+      if (!range.intersectsNode(textNode) || textNode.parentElement.closest('pre, code, [contenteditable="false"], [data-math-source], .markdown-diagram')) continue;
       const start = textNode === range.startContainer ? range.startOffset : 0;
       const end = textNode === range.endContainer ? range.endOffset : textNode.nodeValue.length;
       // Ctrl/Cmd+A 在 contenteditable 中常会把段落间的换行文本也选中；
@@ -425,15 +451,21 @@ function createMde(opts) {
       return mark && mark.classList.contains(`highlight-${color}`);
     });
     if (removeHighlight) {
-      marks.forEach(mark => mark.replaceWith(...mark.childNodes));
+      const restored = [];
+      marks.forEach(mark => {
+        const children = [...mark.childNodes];
+        restored.push(...children); mark.replaceWith(...children);
+      });
       syncPreviewSource(editable);
-      window.getSelection().removeAllRanges();
+      retainLiveSelection(restored);
       return true;
     }
+    const highlighted = [];
     parts.reverse().forEach(part => {
       const parentMark = part.node.parentElement.closest("mark");
       if (parentMark) {
         parentMark.className = `highlight-${color}`;
+        highlighted.push(parentMark);
         return;
       }
       const value = part.node.nodeValue;
@@ -444,9 +476,10 @@ function createMde(opts) {
       mark.textContent = value.slice(part.start, part.end);
       fragment.append(mark, document.createTextNode(value.slice(part.end)));
       part.node.replaceWith(fragment);
+      highlighted.push(mark);
     });
     syncPreviewSource(editable);
-    window.getSelection().removeAllRanges();
+    retainLiveSelection(highlighted);
     return true;
   }
 
@@ -461,6 +494,7 @@ function createMde(opts) {
     if (!current) return;
     current.focus();
     restoreLiveSelection(current);
+    try { document.execCommand("styleWithCSS", false, false); } catch (error) {}
     document.execCommand(command, false, value || null);
     rememberLiveSelection();
     syncPreviewSource(current);
@@ -516,6 +550,9 @@ function createMde(opts) {
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
       if (e.key === "Tab") { e.preventDefault(); document.execCommand("insertText", false, "  "); }
+      else if (mod && !e.altKey && !e.shiftKey && key === "q") { e.preventDefault(); runCmd("highlight-yellow"); }
+      else if (mod && !e.altKey && !e.shiftKey && key === "w") { e.preventDefault(); runCmd("highlight-green"); }
+      else if (mod && !e.altKey && !e.shiftKey && key === "e") { e.preventDefault(); runCmd("highlight-pink"); }
       else if (mod && key === "b") { e.preventDefault(); runCmd("bold"); }
       else if (mod && key === "i") { e.preventDefault(); runCmd("italic"); }
       else if (mod && e.shiftKey && key === "x") { e.preventDefault(); runCmd("strike"); }
