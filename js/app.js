@@ -342,8 +342,170 @@ function applyMarkdownHighlights(html) {
   });
   return tpl.innerHTML;
 }
+
+function protectMarkdownCode(source) {
+  const stash = [];
+  const tokenFor = value => {
+    const token = `LEETWEBPROTECTEDCODE${stash.length}TOKEN`;
+    stash.push({ token, value });
+    return token;
+  };
+  let fenced = "", cursor = 0;
+  while (cursor < source.length) {
+    const lineEnd = source.indexOf("\n", cursor);
+    const next = lineEnd < 0 ? source.length : lineEnd + 1;
+    const line = source.slice(cursor, lineEnd < 0 ? source.length : lineEnd);
+    const opener = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (!opener) {
+      fenced += source.slice(cursor, next);
+      cursor = next;
+      continue;
+    }
+    const marker = opener[1][0], minLength = opener[1].length;
+    let blockEnd = next, scan = next;
+    while (scan < source.length) {
+      const closeLineEnd = source.indexOf("\n", scan);
+      const closeNext = closeLineEnd < 0 ? source.length : closeLineEnd + 1;
+      const closeLine = source.slice(scan, closeLineEnd < 0 ? source.length : closeLineEnd);
+      const closer = closeLine.match(/^ {0,3}(`+|~+)[ \t]*$/);
+      blockEnd = closeNext;
+      if (closer && closer[1][0] === marker && closer[1].length >= minLength) break;
+      scan = closeNext;
+    }
+    fenced += tokenFor(source.slice(cursor, blockEnd));
+    cursor = blockEnd;
+  }
+
+  let result = "", index = 0;
+  while (index < fenced.length) {
+    if (fenced[index] !== "`") {
+      result += fenced[index++];
+      continue;
+    }
+    let runLength = 1;
+    while (fenced[index + runLength] === "`") runLength++;
+    const delimiter = "`".repeat(runLength);
+    let search = index + runLength, close = -1;
+    while (search < fenced.length) {
+      const found = fenced.indexOf(delimiter, search);
+      if (found < 0) break;
+      if (fenced[found - 1] !== "`" && fenced[found + runLength] !== "`") {
+        close = found;
+        break;
+      }
+      search = found + runLength;
+    }
+    if (close < 0) {
+      result += delimiter;
+      index += runLength;
+      continue;
+    }
+    result += tokenFor(fenced.slice(index, close + runLength));
+    index = close + runLength;
+  }
+  return {
+    text: result,
+    restore(value) {
+      stash.forEach(item => { value = value.split(item.token).join(item.value); });
+      return value;
+    },
+  };
+}
+
+function isEscapedDelimiter(source, index) {
+  let slashes = 0;
+  for (let i = index - 1; i >= 0 && source[i] === "\\"; i--) slashes++;
+  return slashes % 2 === 1;
+}
+
+// Typora-compatible $...$ and $$...$$ support. Code fences and inline code are
+// protected first so snippets containing dollar signs stay exactly as written.
+function prepareMarkdownMath(md) {
+  const protectedCode = protectMarkdownCode(String(md || ""));
+  const source = protectedCode.text;
+  let output = "", index = 0;
+  while (index < source.length) {
+    if (source.startsWith("$$", index) && !isEscapedDelimiter(source, index)) {
+      let close = index + 2;
+      while (close < source.length) {
+        close = source.indexOf("$$", close);
+        if (close < 0 || !isEscapedDelimiter(source, close)) break;
+        close += 2;
+      }
+      if (close >= 0) {
+        const formula = source.slice(index + 2, close).trim();
+        if (formula) {
+          output += `\n\n<div class="markdown-math markdown-math-display" data-math-display="true" data-math-source="${encodeURIComponent(formula)}"></div>\n\n`;
+          index = close + 2;
+          continue;
+        }
+      }
+    }
+    if (source[index] === "$" && source[index + 1] !== "$" && !isEscapedDelimiter(source, index) && source[index + 1] && !/\s/.test(source[index + 1])) {
+      const nextLine = source.indexOf("\n", index + 1);
+      const lineEnd = nextLine < 0 ? source.length : nextLine;
+      let close = index + 1;
+      while (close < lineEnd) {
+        close = source.indexOf("$", close);
+        if (close < 0 || close >= lineEnd) break;
+        const valid = !isEscapedDelimiter(source, close)
+          && source[close - 1] !== "$"
+          && source[close + 1] !== "$"
+          && !/\s/.test(source[close - 1])
+          && !/\d/.test(source[close + 1] || "");
+        if (valid) break;
+        close++;
+      }
+      if (close >= 0 && close < lineEnd && source[close] === "$") {
+        const formula = source.slice(index + 1, close);
+        output += `<span class="markdown-math markdown-math-inline" data-math-display="false" data-math-source="${encodeURIComponent(formula)}"></span>`;
+        index = close + 1;
+        continue;
+      }
+    }
+    output += source[index++];
+  }
+  return protectedCode.restore(output);
+}
+
+function markdownMathSource(node) {
+  try { return decodeURIComponent(node.dataset.mathSource || ""); }
+  catch (error) { return node.dataset.mathSource || ""; }
+}
+
+function renderMarkdownMath(container) {
+  if (!container) return;
+  const formulas = [];
+  if (container.matches && container.matches("[data-math-source]")) formulas.push(container);
+  formulas.push(...container.querySelectorAll("[data-math-source]"));
+  formulas.forEach(formula => {
+    const source = markdownMathSource(formula);
+    const displayMode = formula.dataset.mathDisplay === "true";
+    formula.contentEditable = "false";
+    formula.setAttribute("aria-label", `${displayMode ? "块级" : "行内"}公式：${source}`);
+    if (!window.katex) {
+      formula.textContent = displayMode ? `$$\n${source}\n$$` : `$${source}$`;
+      formula.classList.add("markdown-math-fallback");
+      return;
+    }
+    try {
+      katex.render(source, formula, {
+        displayMode,
+        throwOnError: false,
+        strict: "ignore",
+        trust: false,
+        output: "htmlAndMathml",
+      });
+      formula.classList.remove("markdown-math-fallback");
+    } catch (error) {
+      formula.textContent = displayMode ? `$$\n${source}\n$$` : `$${source}$`;
+      formula.classList.add("markdown-math-fallback");
+    }
+  });
+}
+
 function renderMarkdown(md) {
-  const raw = marked.parse(md || "");
+  const raw = marked.parse(prepareMarkdownMath(md));
   const clean = window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
   return applyMarkdownHighlights(clean);
 }
@@ -405,6 +567,7 @@ async function renderMarkdownDiagrams(container) {
 // 把 markdown 渲染进容器并高亮代码块
 function renderMarkdownInto(el, md) {
   el.innerHTML = `<div class="markdown">${renderMarkdown(md)}</div>`;
+  renderMarkdownMath(el);
   if (window.hljs) {
     el.querySelectorAll("pre code").forEach(block => {
       try { hljs.highlightElement(block); } catch (e) {}

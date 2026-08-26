@@ -27,6 +27,40 @@ function imageToDataUrl(file, maxDim = 1400, quality = 0.85) {
   });
 }
 
+function openMdePrompt(opts) {
+  return new Promise(resolve => {
+    const mask = document.createElement("div");
+    mask.className = "modal-mask mde-prompt-mask";
+    mask.innerHTML = `<div class="modal mde-prompt" role="dialog" aria-modal="true">
+      <h3></h3><p class="modal-sub"></p><div class="field"><label></label></div>
+      <div class="modal-actions"><div class="spacer"></div><button type="button" class="btn" data-cancel>取消</button><button type="button" class="btn primary" data-confirm>确定</button></div>
+    </div>`;
+    const title = mask.querySelector("h3"), description = mask.querySelector(".modal-sub"), field = mask.querySelector(".field"), label = field.querySelector("label");
+    title.textContent = opts.title || "输入内容";
+    description.textContent = opts.description || "";
+    description.hidden = !opts.description;
+    label.textContent = opts.label || "内容";
+    const control = document.createElement(opts.multiline ? "textarea" : "input");
+    if (!opts.multiline) control.type = opts.type || "text";
+    else control.rows = opts.rows || 6;
+    control.value = opts.value || "";
+    control.placeholder = opts.placeholder || "";
+    control.setAttribute("aria-label", opts.label || "内容");
+    field.append(control);
+    document.body.append(mask);
+    const close = value => { mask.remove(); resolve(value); };
+    const confirm = () => close(control.value.trim());
+    mask.addEventListener("mousedown", event => { if (event.target === mask) close(null); });
+    mask.querySelector("[data-cancel]").onclick = () => close(null);
+    mask.querySelector("[data-confirm]").onclick = confirm;
+    mask.addEventListener("keydown", event => {
+      if (event.key === "Escape") { event.preventDefault(); close(null); }
+      else if (event.key === "Enter" && (!opts.multiline || event.ctrlKey || event.metaKey)) { event.preventDefault(); confirm(); }
+    });
+    setTimeout(() => { control.focus(); control.select(); }, 0);
+  });
+}
+
 function _wrapSel(ta, before, after, placeholder) {
   const s = ta.selectionStart, e = ta.selectionEnd;
   const sel = ta.value.slice(s, e) || placeholder || "";
@@ -76,10 +110,16 @@ function _toggleHighlightSel(ta, color, placeholder) {
 
 // 将可编辑预览区的常见 HTML 结构转换回 Markdown，供预览模式直接编辑后保存。
 function _previewHtmlToMarkdown(root) {
+  function math(node) {
+    let source = node.dataset.mathSource || "";
+    try { source = decodeURIComponent(source); } catch (error) {}
+    return node.dataset.mathDisplay === "true" ? `$$\n${source}\n$$` : `$${source}$`;
+  }
   const children = node => [...node.childNodes].map(inline).join("");
   function inline(node) {
     if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
     if (node.nodeType !== Node.ELEMENT_NODE) return "";
+    if (node.hasAttribute("data-math-source")) return math(node);
     const tag = node.tagName.toLowerCase();
     const text = children(node);
     if (tag === "br") return "\n";
@@ -93,6 +133,7 @@ function _previewHtmlToMarkdown(root) {
     if (tag === "code" && (!node.parentElement || node.parentElement.tagName !== "PRE")) return `\`${node.textContent || ""}\``;
     if (tag === "a") return `[${text}](${node.getAttribute("href") || ""})`;
     if (tag === "img") return `![${node.getAttribute("alt") || "image"}](${node.getAttribute("src") || ""})`;
+    if (tag === "input" && node.type === "checkbox") return "";
     return text;
   }
   function list(el, ordered) {
@@ -101,7 +142,9 @@ function _previewHtmlToMarkdown(root) {
       const nested = [...li.children].filter(x => x.tagName === "UL" || x.tagName === "OL");
       const body = [...li.childNodes].filter(x => !(x.nodeType === Node.ELEMENT_NODE && (x.tagName === "UL" || x.tagName === "OL"))).map(inline).join("").trim();
       const tail = nested.map(x => list(x, x.tagName === "OL").trimEnd().split("\n").map(line => "  " + line).join("\n")).join("\n");
-      return `${ordered ? `${i + 1}. ` : "- "}${body}${tail ? "\n" + tail : ""}`;
+      const checkbox = [...li.querySelectorAll('input[type="checkbox"]')].find(input => input.closest("li") === li);
+      const marker = ordered ? `${i + 1}. ` : checkbox ? `- [${checkbox.checked ? "x" : " "}] ` : "- ";
+      return `${marker}${body}${tail ? "\n" + tail : ""}`;
     }).join("\n") + "\n\n";
   }
   function table(el) {
@@ -116,6 +159,7 @@ function _previewHtmlToMarkdown(root) {
     if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
     if (node.nodeType !== Node.ELEMENT_NODE) return "";
     if (node.classList.contains("markdown-diagram")) return "";
+    if (node.hasAttribute("data-math-source")) return `${math(node)}\n\n`;
     const tag = node.tagName.toLowerCase();
     if (/^h[1-6]$/.test(tag)) return `${"#".repeat(Number(tag[1]))} ${children(node).trim()}\n\n`;
     if (tag === "p") return `${children(node).trimEnd()}\n\n`;
@@ -129,17 +173,41 @@ function _previewHtmlToMarkdown(root) {
     if (tag === "blockquote") return [...node.childNodes].map(block).join("").trim().split("\n").map(line => `> ${line}`).join("\n") + "\n\n";
     if (tag === "table") return table(node);
     if (tag === "hr") return "---\n\n";
-    if (tag === "div") return [...node.childNodes].map(block).join("") || `${children(node)}\n`;
+    if (tag === "div") {
+      const hasBlockChildren = [...node.children].some(child => /^(H[1-6]|P|PRE|UL|OL|BLOCKQUOTE|TABLE|HR|DIV)$/.test(child.tagName));
+      return hasBlockChildren ? [...node.childNodes].map(block).join("") : `${children(node).trimEnd()}\n`;
+    }
     return inline(node);
   }
   return [...root.childNodes].map(block).join("").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
 }
 
-const MDE_TOOLS = [
-  ["h", "标题", "H"], ["bold", "加粗", "<b>B</b>"], ["italic", "斜体", "<i>I</i>"],
-  ["highlight-yellow", "黄色高亮", "<span class=\"mde-highlight-icon yellow\">✦</span>"], ["highlight-green", "绿色高亮", "<span class=\"mde-highlight-icon green\">✦</span>"], ["highlight-pink", "粉色高亮", "<span class=\"mde-highlight-icon pink\">✦</span>"],
-  ["code", "行内代码", "&lt;/&gt;"], ["codeblock", "代码块", "{ }"], ["quote", "引用", "❝"],
-  ["ul", "无序列表", "•"], ["ol", "有序列表", "1."], ["link", "链接", "🔗"], ["image", "插入图片", "🖼"],
+const MDE_TOOL_GROUPS = [
+  [
+    ["undo", "撤销 (Ctrl/⌘ Z)", '<svg viewBox="0 0 24 24"><path d="M9 7 4 12l5 5M5 12h8a6 6 0 0 1 6 6"/></svg>'],
+    ["redo", "重做 (Ctrl/⌘ Y)", '<svg viewBox="0 0 24 24"><path d="m15 7 5 5-5 5m4-5h-8a6 6 0 0 0-6 6"/></svg>'],
+  ],
+  [
+    ["bold", "加粗 (Ctrl/⌘ B)", "<b>B</b>"], ["italic", "斜体 (Ctrl/⌘ I)", "<i>I</i>"], ["strike", "删除线", "<s>S</s>"],
+  ],
+  [
+    ["highlight-yellow", "黄色高亮", '<span class="mde-highlight-icon yellow">✦</span>'], ["highlight-green", "绿色高亮", '<span class="mde-highlight-icon green">✦</span>'], ["highlight-pink", "粉色高亮", '<span class="mde-highlight-icon pink">✦</span>'],
+  ],
+  [
+    ["code", "行内代码", "&lt;/&gt;"], ["codeblock", "代码块", "{ }"], ["quote", "引用", "❝"],
+  ],
+  [
+    ["ul", "无序列表", '<svg viewBox="0 0 24 24"><circle cx="5" cy="7" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="5" cy="17" r="1"/><path d="M9 7h10M9 12h10M9 17h10"/></svg>'],
+    ["ol", "有序列表", "1."], ["task", "任务列表", '<span class="mde-task-icon">✓</span>'],
+    ["hr", "分割线", '<span class="mde-hr-icon"></span>'],
+    ["table", "插入表格", '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M9 4v16M15 4v16"/></svg>'],
+  ],
+  [
+    ["link", "插入链接 (Ctrl/⌘ K)", '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.1 1.1M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.1-1.1"/></svg>'],
+    ["image", "插入图片", '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-4-4L6 20"/></svg>'],
+    ["math-inline", "行内公式", '<span class="mde-math-icon">∑</span>'],
+    ["math-block", "块级公式", '<span class="mde-math-icon block">∑</span>'],
+  ],
 ];
 
 /*
@@ -159,7 +227,20 @@ function createMde(opts) {
     <div class="mde-tools">
       <button type="button" class="mde-outline-toggle" title="显示或隐藏文档大纲" aria-label="显示或隐藏文档大纲" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6h4M4 12h4M4 18h4M11 6h9M11 12h9M11 18h9"/></svg></button>
       <div class="mde-fmt">
-        ${MDE_TOOLS.map(([c, t, l]) => `<button type="button" data-cmd="${c}" title="${t}">${l}</button>`).join("")}
+        <label class="mde-heading-picker" title="标题级别">
+          <span class="sr-only">标题级别</span>
+          <select data-heading aria-label="标题级别">
+            <option value="">标题</option>
+            <option value="paragraph">正文</option>
+            <option value="h1">一级标题 H1</option>
+            <option value="h2">二级标题 H2</option>
+            <option value="h3">三级标题 H3</option>
+            <option value="h4">四级标题 H4</option>
+            <option value="h5">五级标题 H5</option>
+            <option value="h6">六级标题 H6</option>
+          </select>
+        </label>
+        ${MDE_TOOL_GROUPS.map(group => `<span class="mde-tool-group">${group.map(([c, t, l]) => `<button type="button" data-cmd="${c}" title="${t}" aria-label="${t}">${l}</button>`).join("")}</span>`).join("")}
       </div>
       <div class="spacer"></div>
       ${opts.documentReader ? `<div class="mde-reader-controls" aria-label="阅读版式">
@@ -191,6 +272,23 @@ function createMde(opts) {
   const mode = "view";
   let imgInput = null;
   let readerPages = "one", readerScale = 1;
+  let savedRange = null;
+
+  function rememberLiveSelection() {
+    const editable = view.querySelector("[data-preview-editable]");
+    const selection = window.getSelection();
+    if (!editable || !selection || !selection.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (editable.contains(range.commonAncestorContainer)) savedRange = range.cloneRange();
+  }
+
+  function restoreLiveSelection(editable) {
+    if (!savedRange || !savedRange.commonAncestorContainer.isConnected || !editable.contains(savedRange.commonAncestorContainer)) return false;
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(savedRange);
+    return true;
+  }
 
   function updateOutline() {
     const headings = [...view.querySelectorAll(".markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6")];
@@ -287,6 +385,7 @@ function createMde(opts) {
       ? `<div class="md-reader" data-pages="${readerPages}" style="--reader-scale:${readerScale}"><div class="md-reader-stage">${content}</div></div>`
       : content;
     view.innerHTML = html;
+    renderMarkdownMath(view);
     view.querySelectorAll("pre code").forEach(b => { try { hljs.highlightElement(b); } catch (e) {} });
     renderMarkdownDiagrams(view);
     const editable = view.querySelector("[data-preview-editable]");
@@ -353,35 +452,73 @@ function createMde(opts) {
 
   function activeEditor() {
     const editable = view.querySelector("[data-preview-editable]");
-    return editable && (editable.contains(document.activeElement) || document.activeElement === editable || selectedPreviewRoot()) ? editable : null;
+    const hasSavedSelection = savedRange && savedRange.commonAncestorContainer.isConnected && editable && editable.contains(savedRange.commonAncestorContainer);
+    return editable && (editable.contains(document.activeElement) || document.activeElement === editable || selectedPreviewRoot() || hasSavedSelection) ? editable : null;
   }
   function execLive(command, value) {
     const editable = activeEditor();
-    if (!editable) { view.querySelector("[data-preview-editable]")?.focus(); }
+    const current = editable || view.querySelector("[data-preview-editable]");
+    if (!current) return;
+    current.focus();
+    restoreLiveSelection(current);
     document.execCommand(command, false, value || null);
-    const current = view.querySelector("[data-preview-editable]");
-    if (current) syncPreviewSource(current);
+    rememberLiveSelection();
+    syncPreviewSource(current);
   }
   function insertLiveNode(node) {
     const editable = view.querySelector("[data-preview-editable]");
     if (!editable) return;
     editable.focus();
+    restoreLiveSelection(editable);
     const sel = window.getSelection();
     if (sel && sel.rangeCount && editable.contains(sel.anchorNode)) {
       const range = sel.getRangeAt(0);
       range.deleteContents(); range.insertNode(node); range.setStartAfter(node); range.collapse(true);
       sel.removeAllRanges(); sel.addRange(range);
     } else editable.append(node);
+    rememberLiveSelection();
+    syncPreviewSource(editable);
+  }
+  function insertLiveBlock(node) {
+    const editable = view.querySelector("[data-preview-editable]");
+    if (!editable) return;
+    editable.focus();
+    restoreLiveSelection(editable);
+    const selection = window.getSelection();
+    let anchor = null;
+    if (selection && selection.rangeCount && editable.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      anchor = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer : range.startContainer.parentElement;
+      while (anchor && anchor.parentElement !== editable) anchor = anchor.parentElement;
+    }
+    if (anchor && anchor !== editable) anchor.insertAdjacentElement("afterend", node);
+    else editable.append(node);
+    const nextLine = document.createElement("p");
+    nextLine.append(document.createElement("br"));
+    node.insertAdjacentElement("afterend", nextLine);
+    const range = document.createRange();
+    range.setStart(nextLine, 0); range.collapse(true);
+    selection.removeAllRanges(); selection.addRange(range);
+    rememberLiveSelection();
     syncPreviewSource(editable);
   }
   function bindLiveEditor(editable) {
     editable.addEventListener("input", () => syncPreviewSource(editable));
+    editable.addEventListener("keyup", rememberLiveSelection);
+    editable.addEventListener("mouseup", rememberLiveSelection);
+    editable.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+      checkbox.disabled = false;
+      checkbox.contentEditable = "false";
+      checkbox.addEventListener("change", () => syncPreviewSource(editable));
+    });
     editable.addEventListener("keydown", e => {
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
       if (e.key === "Tab") { e.preventDefault(); document.execCommand("insertText", false, "  "); }
       else if (mod && key === "b") { e.preventDefault(); runCmd("bold"); }
       else if (mod && key === "i") { e.preventDefault(); runCmd("italic"); }
+      else if (mod && e.shiftKey && key === "x") { e.preventDefault(); runCmd("strike"); }
       else if (mod && key === "k") { e.preventDefault(); runCmd("link"); }
       else if (mod && key === "s") {
         e.preventDefault();
@@ -391,6 +528,25 @@ function createMde(opts) {
       else if (mod && e.shiftKey && e.key === "7") { e.preventDefault(); runCmd("ol"); }
       else if (mod && e.shiftKey && e.key === "8") { e.preventDefault(); runCmd("ul"); }
       else if (mod && e.altKey && /^[1-6]$/.test(e.key)) { e.preventDefault(); execLive("formatBlock", `h${e.key}`); }
+    });
+    editable.addEventListener("dblclick", async e => {
+      const formula = e.target.closest && e.target.closest("[data-math-source]");
+      if (!formula || !editable.contains(formula)) return;
+      e.preventDefault();
+      let source = formula.dataset.mathSource || "";
+      try { source = decodeURIComponent(source); } catch (error) {}
+      const displayMode = formula.dataset.mathDisplay === "true";
+      const next = await openMdePrompt({
+        title: displayMode ? "编辑块级公式" : "编辑行内公式",
+        description: "支持 Typora / LaTeX 数学语法。",
+        label: "公式源码",
+        value: source,
+        multiline: displayMode,
+      });
+      if (next === null || !next.trim()) return;
+      formula.dataset.mathSource = encodeURIComponent(next.trim());
+      renderMarkdownMath(formula);
+      syncPreviewSource(editable);
     });
     editable.addEventListener("paste", e => {
       const items = (e.clipboardData && e.clipboardData.items) || [];
@@ -417,23 +573,91 @@ function createMde(opts) {
     imgInput.click();
   }
 
+  function selectedLiveText() {
+    const editable = view.querySelector("[data-preview-editable]");
+    if (!editable) return "";
+    restoreLiveSelection(editable);
+    const selection = window.getSelection();
+    return selection && selection.rangeCount && editable.contains(selection.getRangeAt(0).commonAncestorContainer) ? selection.toString() : "";
+  }
+
+  function insertTable() {
+    const table = document.createElement("table");
+    const thead = document.createElement("thead"), headRow = document.createElement("tr");
+    ["列 1", "列 2", "列 3"].forEach(label => {
+      const th = document.createElement("th"); th.textContent = label; headRow.append(th);
+    });
+    thead.append(headRow);
+    const tbody = document.createElement("tbody");
+    for (let rowIndex = 0; rowIndex < 2; rowIndex++) {
+      const row = document.createElement("tr");
+      for (let columnIndex = 0; columnIndex < 3; columnIndex++) {
+        const cell = document.createElement("td"); cell.textContent = "内容"; row.append(cell);
+      }
+      tbody.append(row);
+    }
+    table.append(thead, tbody);
+    insertLiveBlock(table);
+  }
+
+  function insertTaskList() {
+    const list = document.createElement("ul"), item = document.createElement("li");
+    list.className = "contains-task-list"; item.className = "task-list-item";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox"; checkbox.contentEditable = "false";
+    checkbox.addEventListener("change", () => syncPreviewSource(view.querySelector("[data-preview-editable]")));
+    item.append(checkbox, document.createTextNode(" 待办事项"));
+    list.append(item); insertLiveBlock(list);
+  }
+
+  async function insertMath(displayMode) {
+    const selected = selectedLiveText().trim();
+    const fallback = displayMode ? "\\begin{aligned}\na^2 + b^2 &= c^2\n\\end{aligned}" : "E = mc^2";
+    const source = await openMdePrompt({
+      title: displayMode ? "插入块级公式" : "插入行内公式",
+      description: displayMode ? "保存后使用 $$ ... $$ 语法，可用 Ctrl/⌘ + Enter 确认。" : "保存后使用 $ ... $ 语法。",
+      label: "LaTeX 公式",
+      value: selected || fallback,
+      multiline: displayMode,
+    });
+    if (source === null || !source.trim()) return;
+    const formula = document.createElement(displayMode ? "div" : "span");
+    formula.className = `markdown-math markdown-math-${displayMode ? "display" : "inline"}`;
+    formula.dataset.mathDisplay = String(displayMode);
+    formula.dataset.mathSource = encodeURIComponent(source.trim());
+    if (displayMode) insertLiveBlock(formula);
+    else insertLiveNode(formula);
+    renderMarkdownMath(formula);
+  }
+
   function runCmd(name) {
     if (name.startsWith("highlight-")) {
       const color = name.slice("highlight-".length);
       if (highlightPreview(color)) return;
       toast("请先选择要高亮的文字"); return;
     }
-    if (activeEditor()) {
+    if (view.querySelector("[data-preview-editable]")) {
       switch (name) {
+        case "undo": execLive("undo"); return;
+        case "redo": execLive("redo"); return;
         case "bold": execLive("bold"); return;
         case "italic": execLive("italic"); return;
-        case "h": execLive("formatBlock", "h2"); return;
+        case "strike": execLive("strikeThrough"); return;
+        case "paragraph": execLive("formatBlock", "p"); return;
+        case "h1": case "h2": case "h3": case "h4": case "h5": case "h6": execLive("formatBlock", name); return;
         case "quote": execLive("formatBlock", "blockquote"); return;
         case "ul": execLive("insertUnorderedList"); return;
         case "ol": execLive("insertOrderedList"); return;
+        case "task": insertTaskList(); return;
+        case "hr": { insertLiveBlock(document.createElement("hr")); return; }
+        case "table": insertTable(); return;
+        case "math-inline": insertMath(false); return;
+        case "math-block": insertMath(true); return;
+        case "image": pickImage(); return;
         case "link": {
-          const href = window.prompt("链接地址", "https://");
-          if (href) execLive("createLink", href);
+          openMdePrompt({ title: "插入链接", label: "链接地址", value: "https://", type: "url" }).then(href => {
+            if (href) execLive("createLink", href);
+          });
           return;
         }
         case "code": {
@@ -444,13 +668,14 @@ function createMde(opts) {
         case "codeblock": {
           const pre = document.createElement("pre"), code = document.createElement("code");
           const sel = window.getSelection(); code.textContent = sel && !sel.isCollapsed ? sel.toString() : "代码";
-          pre.append(code); insertLiveNode(pre); return;
+          pre.append(code); insertLiveBlock(pre); return;
         }
       }
     }
     switch (name) {
       case "bold": _wrapSel(ta, "**", "**", "粗体"); break;
       case "italic": _wrapSel(ta, "_", "_", "斜体"); break;
+      case "strike": _wrapSel(ta, "~~", "~~", "删除线"); break;
       case "highlight-yellow": _toggleHighlightSel(ta, "yellow", "重点内容"); break;
       case "highlight-green": _toggleHighlightSel(ta, "green", "重点内容"); break;
       case "highlight-pink": _toggleHighlightSel(ta, "pink", "重点内容"); break;
@@ -459,15 +684,28 @@ function createMde(opts) {
       case "quote": _linePrefix(ta, "> "); break;
       case "ul": _linePrefix(ta, "- "); break;
       case "ol": _linePrefix(ta, "1. "); break;
-      case "h": _linePrefix(ta, "# "); break;
+      case "task": _linePrefix(ta, "- [ ] "); break;
+      case "hr": _insertAt(ta, "\n\n---\n\n"); break;
+      case "table": _insertAt(ta, "\n\n| 列 1 | 列 2 | 列 3 |\n| --- | --- | --- |\n| 内容 | 内容 | 内容 |\n| 内容 | 内容 | 内容 |\n\n"); break;
+      case "math-inline": _wrapSel(ta, "$", "$", "E = mc^2"); break;
+      case "math-block": _wrapSel(ta, "\n\n$$\n", "\n$$\n\n", "\\begin{aligned}\na^2 + b^2 &= c^2\n\\end{aligned}"); break;
+      case "paragraph": break;
+      case "h1": case "h2": case "h3": case "h4": case "h5": case "h6": _linePrefix(ta, `${"#".repeat(Number(name[1]))} `); break;
       case "link": _wrapSel(ta, "[", "](https://)", "链接文字"); break;
       case "image": pickImage(); return;
     }
     ta.dispatchEvent(new Event("input", { bubbles: true }));
   }
-  root.querySelectorAll(".mde-fmt button").forEach(b => {
-    b.addEventListener("mousedown", e => e.preventDefault());
+  root.querySelectorAll(".mde-fmt [data-cmd]").forEach(b => {
+    b.addEventListener("mousedown", e => { rememberLiveSelection(); e.preventDefault(); });
     b.onclick = () => runCmd(b.dataset.cmd);
+  });
+  const headingPicker = root.querySelector("[data-heading]");
+  headingPicker.addEventListener("mousedown", rememberLiveSelection);
+  headingPicker.addEventListener("change", () => {
+    const command = headingPicker.value;
+    if (command) runCmd(command);
+    headingPicker.value = "";
   });
   root.querySelectorAll("[data-reader-pages]").forEach(b => b.onclick = () => { readerPages = b.dataset.readerPages; renderPreview(); updateReaderControls(); });
   root.querySelectorAll("[data-reader-zoom]").forEach(b => b.onclick = () => {

@@ -962,7 +962,7 @@ function renderKbNote(nid) {
       <button class="btn" id="kbDl">${ICON.download} .md</button>
       <button class="btn primary" id="kbSave">${ICON.save} 保存</button>
     </div>
-    <button class="kb-pdf-reveal kb-md-reveal" id="kbMdReveal" title="显示阅读工具栏" aria-label="显示阅读工具栏">${ICON.back}</button>
+    <button class="kb-pdf-reveal kb-md-reveal" id="kbMdReveal" title="展开上边栏" aria-label="展开上边栏">${ICON.back}</button>
     <div class="kb-note-body" id="kbMount"></div>
   </div></div>`;
 
@@ -990,14 +990,34 @@ function renderKbNote(nid) {
   const mdView = mde.el.querySelector(".mde-view");
   const mdReveal = document.getElementById("kbMdReveal");
   let lastMdScroll = 0;
+  let downwardMdTravel = 0;
+  let revealGuardUntil = 0;
   mdView.addEventListener("scroll", () => {
     const next = mdView.scrollTop;
-    if (mde.getMode() !== "view") { setKbMdImmersive(false); lastMdScroll = next; return; }
-    if (next > lastMdScroll + 7 && next > 36) setKbMdImmersive(true);
-    else if (next < lastMdScroll - 7 || next < 12) setKbMdImmersive(false);
+    const delta = next - lastMdScroll;
+    if (mde.getMode() !== "view") { setKbMdImmersive(false); downwardMdTravel = 0; lastMdScroll = next; return; }
+    if (next <= 4) {
+      downwardMdTravel = 0;
+      setKbMdImmersive(false);
+    } else if (performance.now() <= revealGuardUntil) {
+      downwardMdTravel = 0;
+    } else if (delta > 0) {
+      downwardMdTravel += delta;
+      if (downwardMdTravel >= 28 && next > 36) {
+        setKbMdImmersive(true);
+        downwardMdTravel = 0;
+      }
+    } else if (delta < 0) {
+      downwardMdTravel = 0;
+    }
     lastMdScroll = next;
   }, { passive: true });
-  mdReveal.onclick = () => setKbMdImmersive(false);
+  mdReveal.onclick = () => {
+    revealGuardUntil = performance.now() + 420;
+    downwardMdTravel = 0;
+    setKbMdImmersive(false);
+    requestAnimationFrame(() => { lastMdScroll = mdView.scrollTop; });
+  };
   mde.textarea.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); persist(true); } });
   document.getElementById("kbSave").onclick = () => persist(true);
   document.getElementById("kbDl").onclick = () => { const blob = new Blob([mde.get()], { type: "text/markdown;charset=utf-8" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = n.name + ".md"; a.click(); URL.revokeObjectURL(a.href); };
