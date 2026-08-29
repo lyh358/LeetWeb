@@ -33,6 +33,14 @@ const Sync = (() => {
     return new TextDecoder().decode(bytes);
   }
   function encPath(p) { return p.split("/").map(encodeURIComponent).join("/"); }
+  async function errorText(res) {
+    try {
+      const d = await res.clone().json();
+      return d && d.message ? d.message : "";
+    } catch (e) {
+      try { return await res.text(); } catch (_) { return ""; }
+    }
+  }
 
   // ---- 底层请求 ----
   async function api(path, opts = {}) {
@@ -53,12 +61,67 @@ const Sync = (() => {
     if (!res.ok) throw new Error(`读取失败 (${res.status})`);
     const d = await res.json();
     shaCache[path] = d.sha;
-    return { sha: d.sha, content: base64ToUtf8(d.content) };
+    let b64 = d.content;
+    if (!b64 && d.sha) {
+      const br = await api(`/repos/${c.owner}/${c.repo}/git/blobs/${d.sha}`);
+      if (!br.ok) throw new Error(`读取失败 (${br.status})`);
+      b64 = (await br.json()).content;
+    }
+    return { sha: d.sha, content: base64ToUtf8(b64) };
+  }
+
+  async function putFileByGitData(path, contentBase64, message) {
+    const c = getCfg();
+    const refPath = `/repos/${c.owner}/${c.repo}/git/ref/heads/${encPath(branch())}`;
+    const refRes = await api(refPath);
+    if (!refRes.ok) throw new Error(`读取分支失败 (${refRes.status})`);
+    const ref = await refRes.json();
+    const headSha = ref.object && ref.object.sha;
+    if (!headSha) throw new Error("读取分支失败：缺少 HEAD");
+
+    const commitRes = await api(`/repos/${c.owner}/${c.repo}/git/commits/${headSha}`);
+    if (!commitRes.ok) throw new Error(`读取提交失败 (${commitRes.status})`);
+    const headCommit = await commitRes.json();
+
+    const blobRes = await api(`/repos/${c.owner}/${c.repo}/git/blobs`, {
+      method: "POST",
+      body: JSON.stringify({ content: contentBase64, encoding: "base64" }),
+    });
+    if (!blobRes.ok) throw new Error(`创建内容失败 (${blobRes.status})`);
+    const blob = await blobRes.json();
+
+    const treeRes = await api(`/repos/${c.owner}/${c.repo}/git/trees`, {
+      method: "POST",
+      body: JSON.stringify({
+        base_tree: headCommit.tree.sha,
+        tree: [{ path, mode: "100644", type: "blob", sha: blob.sha }],
+      }),
+    });
+    if (!treeRes.ok) throw new Error(`创建文件树失败 (${treeRes.status})`);
+    const tree = await treeRes.json();
+
+    const newCommitRes = await api(`/repos/${c.owner}/${c.repo}/git/commits`, {
+      method: "POST",
+      body: JSON.stringify({ message, tree: tree.sha, parents: [headSha] }),
+    });
+    if (!newCommitRes.ok) throw new Error(`创建提交失败 (${newCommitRes.status})`);
+    const newCommit = await newCommitRes.json();
+
+    const updateRes = await api(refPath, {
+      method: "PATCH",
+      body: JSON.stringify({ sha: newCommit.sha, force: false }),
+    });
+    if (updateRes.status === 409) throw new Error("保存失败：远端分支已更新，请稍后重试");
+    if (!updateRes.ok) throw new Error(`更新分支失败 (${updateRes.status})`);
+    shaCache[path] = blob.sha;
+    return newCommit;
   }
 
   async function putFile(path, contentStr, message) {
     const c = getCfg();
-    const body = { message, content: utf8ToBase64(contentStr), branch: branch() };
+    const content = utf8ToBase64(contentStr);
+    if (content.length > 900 * 1024) return putFileByGitData(path, content, message);
+    const body = { message, content, branch: branch() };
     let sha = shaCache[path];
     if (sha === undefined) { const f = await getFile(path); sha = f ? f.sha : null; }
     if (sha) body.sha = sha;
@@ -69,7 +132,13 @@ const Sync = (() => {
       if (f) body.sha = f.sha; else delete body.sha;
       res = await api(url, { method: "PUT", body: JSON.stringify(body) });
     }
-    if (!res.ok) throw new Error(`保存失败 (${res.status})`);
+    if (!res.ok) {
+      const msg = await errorText(res);
+      if (res.status === 413 || res.status === 422 || /too large|exceeds|size/i.test(msg)) {
+        return putFileByGitData(path, content, message);
+      }
+      throw new Error(`保存失败 (${res.status}${msg ? "：" + msg : ""})`);
+    }
     const d = await res.json();
     if (d.content) shaCache[path] = d.content.sha;
     return d;

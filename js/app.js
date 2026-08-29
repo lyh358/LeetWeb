@@ -128,16 +128,18 @@ function lastSyncText() {
 
 // 待补传队列（会话内，按逻辑键去重；联网后自动重试）
 const PendingSync = {
-  map: new Map(),                       // key -> { label, fn }
-  add(key, label, fn) { this.map.set(key, { label, fn }); refreshSyncUi(); },
+  map: new Map(),                       // key -> { label, fn, error }
+  add(key, label, fn, error) { this.map.set(key, { label, fn, error: error || "" }); refreshSyncUi(); },
   clear(key) { this.map.delete(key); },
   count() { return this.map.size; },
   labels() { return [...this.map.values()].map(v => v.label); },
+  lastError() { const item = [...this.map.values()].find(v => v.error); return item ? item.error : ""; },
   async flush() {
     if (!Sync.configured() || !this.map.size) return;
     setSyncState("busy");
-    for (const [key, { fn }] of [...this.map]) {
-      try { await fn(); this.map.delete(key); } catch (e) { break; }   // 仍失败则停下，等下次
+    for (const [key, { label, fn }] of [...this.map]) {
+      try { await fn(); this.map.delete(key); }
+      catch (e) { this.add(key, label, fn, e && e.message ? e.message : String(e)); break; }   // 仍失败则停下，等下次
     }
     if (this.map.size === 0) markSynced();
     refreshSyncUi();
@@ -152,7 +154,7 @@ function setSyncState(state, msg) {
   const btn = document.getElementById("syncBtn");
   const titles = {
     off: "未连接 GitHub（点击设置）", busy: "同步中…", err: "同步失败：" + (msg || ""),
-    ok: "已同步 · " + lastSyncText(), pending: PendingSync.count() + " 项待补传（联网后自动，点此查看）",
+    ok: "已同步 · " + lastSyncText(), pending: PendingSync.count() + " 项待补传" + (PendingSync.lastError() ? "：" + PendingSync.lastError() : "（联网后自动，点此查看）"),
   };
   if (btn) btn.title = titles[state] || "GitHub 同步";
 }
@@ -163,7 +165,7 @@ function refreshSyncDot() { refreshSyncUi(); }
 async function trySync(key, label, fn) {
   if (!Sync.configured()) return true;
   try { setSyncState("busy"); await fn(); PendingSync.clear(key); markSynced(); refreshSyncUi(); return true; }
-  catch (e) { PendingSync.add(key, label, fn); refreshSyncUi(); return false; }
+  catch (e) { PendingSync.add(key, label, fn, e && e.message ? e.message : String(e)); refreshSyncUi(); return false; }
 }
 
 // 状态/收藏变化：推 meta.json
@@ -224,7 +226,7 @@ function openSettings() {
     if (!PendingSync.count()) { toast("已是最新，无待补传"); return; }
     flushBtn.innerHTML = '<span class="spin"></span> 补传中…'; flushBtn.disabled = true;
     await PendingSync.flush();
-    toast(PendingSync.count() ? `仍有 ${PendingSync.count()} 项未成功（检查网络/Token）` : "已全部补传");
+    toast(PendingSync.count() ? `仍有 ${PendingSync.count()} 项未成功：${PendingSync.lastError() || "请检查网络/Token"}` : "已全部补传");
     close(); openSettings();
   };
 
