@@ -7,6 +7,7 @@
 const Sync = (() => {
   const GH_KEY = "leetweb:gh";
   const shaCache = {};           // path -> 最新 sha，减少一次读
+  const writeLocks = {};         // path -> Promise，避免同一文件自动保存并发提交
   let remoteNoteIds = new Set();  // 远端已有笔记的题目 id
 
   // ---- 配置 ----
@@ -48,6 +49,7 @@ const Sync = (() => {
     if (!c || !c.token) throw new Error("未配置 GitHub");
     const headers = Object.assign({
       "Accept": "application/vnd.github+json",
+      "Content-Type": "application/json",
       "Authorization": "Bearer " + c.token,
       "X-GitHub-Api-Version": "2022-11-28",
     }, opts.headers || {});
@@ -70,24 +72,28 @@ const Sync = (() => {
     return { sha: d.sha, content: base64ToUtf8(b64) };
   }
 
-  async function putFileByGitData(path, contentBase64, message) {
+  function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function putFileByGitDataOnce(path, contentBase64, message) {
     const c = getCfg();
     const refPath = `/repos/${c.owner}/${c.repo}/git/ref/heads/${encPath(branch())}`;
     const refRes = await api(refPath);
-    if (!refRes.ok) throw new Error(`读取分支失败 (${refRes.status})`);
+    if (!refRes.ok) throw new Error(`读取分支失败 (${refRes.status}${await errorText(refRes).then(t => t ? "：" + t : "")})`);
     const ref = await refRes.json();
     const headSha = ref.object && ref.object.sha;
     if (!headSha) throw new Error("读取分支失败：缺少 HEAD");
 
     const commitRes = await api(`/repos/${c.owner}/${c.repo}/git/commits/${headSha}`);
-    if (!commitRes.ok) throw new Error(`读取提交失败 (${commitRes.status})`);
+    if (!commitRes.ok) throw new Error(`读取提交失败 (${commitRes.status}${await errorText(commitRes).then(t => t ? "：" + t : "")})`);
     const headCommit = await commitRes.json();
 
     const blobRes = await api(`/repos/${c.owner}/${c.repo}/git/blobs`, {
       method: "POST",
       body: JSON.stringify({ content: contentBase64, encoding: "base64" }),
     });
-    if (!blobRes.ok) throw new Error(`创建内容失败 (${blobRes.status})`);
+    if (!blobRes.ok) throw new Error(`创建内容失败 (${blobRes.status}${await errorText(blobRes).then(t => t ? "：" + t : "")})`);
     const blob = await blobRes.json();
 
     const treeRes = await api(`/repos/${c.owner}/${c.repo}/git/trees`, {
@@ -97,30 +103,39 @@ const Sync = (() => {
         tree: [{ path, mode: "100644", type: "blob", sha: blob.sha }],
       }),
     });
-    if (!treeRes.ok) throw new Error(`创建文件树失败 (${treeRes.status})`);
+    if (!treeRes.ok) throw new Error(`创建文件树失败 (${treeRes.status}${await errorText(treeRes).then(t => t ? "：" + t : "")})`);
     const tree = await treeRes.json();
 
     const newCommitRes = await api(`/repos/${c.owner}/${c.repo}/git/commits`, {
       method: "POST",
       body: JSON.stringify({ message, tree: tree.sha, parents: [headSha] }),
     });
-    if (!newCommitRes.ok) throw new Error(`创建提交失败 (${newCommitRes.status})`);
+    if (!newCommitRes.ok) throw new Error(`创建提交失败 (${newCommitRes.status}${await errorText(newCommitRes).then(t => t ? "：" + t : "")})`);
     const newCommit = await newCommitRes.json();
 
     const updateRes = await api(refPath, {
       method: "PATCH",
       body: JSON.stringify({ sha: newCommit.sha, force: false }),
     });
-    if (updateRes.status === 409) throw new Error("保存失败：远端分支已更新，请稍后重试");
-    if (!updateRes.ok) throw new Error(`更新分支失败 (${updateRes.status})`);
+    if (updateRes.status === 409) return null;
+    if (!updateRes.ok) throw new Error(`更新分支失败 (${updateRes.status}${await errorText(updateRes).then(t => t ? "：" + t : "")})`);
     shaCache[path] = blob.sha;
     return newCommit;
   }
 
-  async function putFile(path, contentStr, message) {
+  async function putFileByGitData(path, contentBase64, message) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const commit = await putFileByGitDataOnce(path, contentBase64, message);
+      if (commit) return commit;
+      await wait(220 * (attempt + 1));
+    }
+    throw new Error("保存失败：远端分支频繁更新，请稍后重试");
+  }
+
+  async function putFileUnlocked(path, contentStr, message) {
     const c = getCfg();
     const content = utf8ToBase64(contentStr);
-    if (content.length > 900 * 1024) return putFileByGitData(path, content, message);
+    if (content.length > 700 * 1024) return putFileByGitData(path, content, message);
     const body = { message, content, branch: branch() };
     let sha = shaCache[path];
     if (sha === undefined) { const f = await getFile(path); sha = f ? f.sha : null; }
@@ -144,7 +159,21 @@ const Sync = (() => {
     return d;
   }
 
-  async function deleteFile(path, message) {
+  function queueTextWrite(path, task) {
+    const previous = writeLocks[path] || Promise.resolve();
+    const current = previous.catch(() => {}).then(task);
+    const locked = current.finally(() => {
+      if (writeLocks[path] === locked) delete writeLocks[path];
+    });
+    writeLocks[path] = locked;
+    return current;
+  }
+
+  async function putFile(path, contentStr, message) {
+    return queueTextWrite(path, () => putFileUnlocked(path, contentStr, message));
+  }
+
+  async function deleteFileUnlocked(path, message) {
     const c = getCfg();
     let sha = shaCache[path];
     if (!sha) { const f = await getFile(path); if (!f) return; sha = f.sha; }
@@ -152,6 +181,10 @@ const Sync = (() => {
     const res = await api(url, { method: "DELETE", body: JSON.stringify({ message, sha, branch: branch() }) });
     if (!res.ok && res.status !== 404) throw new Error(`删除失败 (${res.status})`);
     delete shaCache[path];
+  }
+
+  async function deleteFile(path, message) {
+    return queueTextWrite(path, () => deleteFileUnlocked(path, message));
   }
 
   // ---- 业务 ----
@@ -232,8 +265,8 @@ const Sync = (() => {
   async function deletePdf(id) { await deleteFile(pdfPath(id), `remove pdf: ${id}`); }
 
   async function pushNote(id, md) {
-    if (md && md.trim()) { await putFile(notePath(id), md, `note: ${id}`); remoteNoteIds.add(Number(id)); }
-    else { await deleteFile(notePath(id), `remove note: ${id}`); remoteNoteIds.delete(Number(id)); }
+    if (md && md.trim()) { await putFile(notePath(id), md, `note: ${id}`); remoteNoteIds.add(String(id)); }
+    else { await deleteFile(notePath(id), `remove note: ${id}`); remoteNoteIds.delete(String(id)); remoteNoteIds.delete(Number(id)); }
   }
   async function pullNote(id) {
     const f = await getFile(notePath(id));
@@ -267,8 +300,8 @@ const Sync = (() => {
     remoteNoteIds = new Set();
     (Array.isArray(arr) ? arr : []).forEach(x => {
       if (x.type === "file" && /\.md$/i.test(x.name)) {
-        const m = x.name.match(/^(\d+)/);
-        if (m) { remoteNoteIds.add(Number(m[1])); shaCache["notes/" + x.name] = x.sha; }
+        const m = x.name.match(/^(.+?)-/);
+        if (m) { remoteNoteIds.add(m[1]); shaCache["notes/" + x.name] = x.sha; }
       }
     });
     return [...remoteNoteIds];
@@ -280,7 +313,7 @@ const Sync = (() => {
     await listNotes();
   }
 
-  function hasRemoteNote(id) { return remoteNoteIds.has(Number(id)); }
+  function hasRemoteNote(id) { return remoteNoteIds.has(String(id)) || remoteNoteIds.has(Number(id)); }
 
   // ---- 通用文件读写（供手撕题库 / 知识库使用，路径任意）----
   async function readText(path) { const f = await getFile(path); return f ? f.content : null; }

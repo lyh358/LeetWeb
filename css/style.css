@@ -1078,6 +1078,7 @@ body.kb-md-immersive .kb-note-body { height: 100dvh; }
 .chip:hover { border-color: var(--accent-soft); color: var(--ink); }
 .chip.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .chip .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.priority-chip.active { background: var(--clay); border-color: var(--clay); color: #fff; }
 
 /* ---------- 分类 + 题目列表 ---------- */
 .category { margin-bottom: 44px; scroll-margin-top: 90px; }
@@ -1117,17 +1118,55 @@ body.kb-md-immersive .kb-note-body { height: 100dvh; }
 .extra-source svg { width: 14px; height: 14px; }
 .extra-problem-grid { position: relative; }
 .premium-mark { padding: 1px 6px; border: 1px solid color-mix(in srgb, var(--gold) 50%, var(--line)); border-radius: 3px; color: var(--gold); font-family: var(--mono); font-size: 9px; font-weight: 600; letter-spacing: .5px; }
+.priority-category { margin-top: 8px; }
+.priority-head {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 24px;
+  margin-bottom: 16px; padding: 18px 20px; border: 1px solid var(--line);
+  border-radius: var(--radius-lg); background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+.priority-title h2 { margin: 0; color: var(--ink); font-family: var(--serif); font-size: 23px; font-weight: 600; letter-spacing: 2px; }
+.priority-title p { margin: 4px 0 0; max-width: 660px; color: var(--ink-faint); font-size: 12px; }
+.priority-note {
+  margin: -4px 0 16px; padding: 9px 12px; border: 1px dashed var(--line);
+  border-radius: var(--radius); color: var(--ink-soft); background: color-mix(in srgb, var(--surface) 70%, transparent);
+  font-size: 12px;
+}
+.priority-grid { align-items: stretch; }
+.priority-card { padding-left: 56px; }
+.priority-card::before { background: var(--clay); }
+.priority-rank {
+  position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+  min-width: 30px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--clay) 42%, var(--line));
+  border-radius: 6px; color: var(--clay); background: color-mix(in srgb, var(--clay) 8%, var(--surface));
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+}
+.freq-badge,
+.hot100-badge {
+  display: inline-flex; align-items: center; height: 18px; padding: 0 7px;
+  border-radius: 3px; font-family: var(--mono); font-size: 9px; font-weight: 700; letter-spacing: .5px;
+  white-space: nowrap;
+}
+.freq-badge { color: var(--clay); border: 1px solid color-mix(in srgb, var(--clay) 44%, var(--line)); background: color-mix(in srgb, var(--clay) 8%, transparent); }
+.hot100-badge { color: var(--moss); border: 1px solid color-mix(in srgb, var(--moss) 44%, var(--line)); background: color-mix(in srgb, var(--moss) 8%, transparent); }
 @media (max-width: 760px) {
   .extra-category-head { grid-template-columns: 1fr auto; gap: 14px 18px; }
+  .priority-head { grid-template-columns: 1fr auto; gap: 14px 18px; }
   .extra-heading { grid-column: 1 / -1; }
+  .priority-title { grid-column: 1 / -1; }
   .extra-progress-copy { justify-content: flex-start; }
   .extra-source { justify-self: end; }
 }
 @media (max-width: 480px) {
   .extra-category { margin-top: 52px; padding-top: 22px; }
   .extra-category-head { padding: 15px; }
+  .priority-head { padding: 15px; }
   .extra-heading h2 { font-size: 19px; letter-spacing: 1px; }
+  .priority-title h2 { font-size: 19px; letter-spacing: 1px; }
   .extra-progress .cat-prog-bar { width: 102px; }
+  .priority-card { padding-left: 48px; }
+  .priority-rank { left: 10px; min-width: 28px; }
 }
 
 .problem-grid {
@@ -1152,7 +1191,7 @@ body.kb-md-immersive .kb-note-body { height: 100dvh; }
 .pc-id { font-family: var(--serif); font-size: 13px; color: var(--ink-faint); width: 34px; flex-shrink: 0; }
 .pc-body { flex: 1; min-width: 0; }
 .pc-title { font-size: 15px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pc-meta { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.pc-meta { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; margin-top: 4px; }
 .diff { font-size: 11px; letter-spacing: 1px; }
 .diff.d1 { color: var(--easy); }
 .diff.d2 { color: var(--medium); }

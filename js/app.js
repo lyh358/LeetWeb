@@ -594,7 +594,7 @@ function statusClass(id) {
   return s === 1 ? "solved" : s === 2 ? "review" : "";
 }
 
-let filterState = { cat: "全部", diff: 0, star: false, q: "" };
+let filterState = { cat: "全部", diff: 0, star: false, q: "", huawei: false };
 
 function renderList() {
   document.body.classList.remove("detail-mode");
@@ -639,6 +639,7 @@ function renderList() {
           <span class="chip ${filterState.diff===2?'active':''}" data-diff="2"><span class="dot" style="background:var(--medium)"></span>中等</span>
           <span class="chip ${filterState.diff===3?'active':''}" data-diff="3"><span class="dot" style="background:var(--hard)"></span>困难</span>
           <span class="chip ${filterState.star?'active':''}" id="starFilter">★ 收藏</span>
+          <span class="chip priority-chip ${filterState.huawei?'active':''}" id="huaweiRankFilter" title="按华为校招&实习高频优先级排序">华为高频优先</span>
         </div>
       </div>
 
@@ -660,6 +661,7 @@ function renderList() {
     c.onclick = () => { filterState.diff = parseInt(c.dataset.diff,10); renderList(); };
   });
   document.getElementById("starFilter").onclick = () => { filterState.star = !filterState.star; renderList(); };
+  document.getElementById("huaweiRankFilter").onclick = () => { filterState.huawei = !filterState.huawei; renderList(); };
 }
 
 function matchFilter(p) {
@@ -674,6 +676,11 @@ function matchFilter(p) {
 
 function renderCategories() {
   const container = document.getElementById("catList");
+  if (filterState.huawei) {
+    renderHuaweiHighFreq(container);
+    return;
+  }
+
   let html = "";
   CATEGORIES.forEach((cat, i) => {
     const items = PROBLEMS.filter(p => p.cat === cat && matchFilter(p));
@@ -728,6 +735,55 @@ function renderCategories() {
   container.querySelectorAll(".problem-card").forEach(el => {
     el.onclick = (e) => {
       if (e.target.closest(".star-toggle")) return;
+      location.hash = "#/p/" + encodeURIComponent(el.dataset.id);
+    };
+    const starBtn = el.querySelector(".star-toggle");
+    if (starBtn) starBtn.onclick = (e) => {
+      e.stopPropagation();
+      const on = Store.toggleStar(el.dataset.id);
+      starBtn.innerHTML = on ? ICON.starFill : ICON.star;
+      starBtn.classList.toggle("on", on);
+    };
+  });
+}
+
+function renderHuaweiHighFreq(container) {
+  const ranked = getHuaweiHighFreqProblems();
+  const items = ranked.filter(matchFilter);
+  const stats = Store.stats(ranked);
+  const done = stats.solved + stats.review;
+  const pct = Math.round(done / Math.max(1, stats.total) * 100);
+  const missing = HUAWEI_HIGH_FREQ_ITEMS.length - ranked.length;
+  container.innerHTML = `
+    <section class="category priority-category">
+      <div class="priority-head">
+        <div class="priority-title">
+          <span class="extra-kicker">排序刷题</span>
+          <h2>华为校招&实习高频题</h2>
+          <p>按用户提供题单统计频次从高到低排列；与本站官方 Hot100 重合的题额外加权。无法定位到 LeetCode 原题的原创手撕题暂不进入轮单。</p>
+        </div>
+        <div class="extra-progress" title="${done}/${stats.total}（已解决 + 待复习）">
+          <div class="extra-progress-copy"><b>${done}</b><span>/ ${stats.total} 完成</span></div>
+          <div class="cat-prog-bar"><span style="width:${pct}%"></span></div>
+        </div>
+        <a class="extra-source" href="${HUAWEI_HIGH_FREQ_SOURCE_URL}" target="_blank" rel="noopener noreferrer">
+          查看来源 ${ICON.external}
+        </a>
+      </div>
+      ${missing ? `<div class="priority-note">有 ${missing} 个来源条目未进入轮单：只保留可定位到 LeetCode / LCR / 面试题原题的条目。</div>` : ""}
+      <div class="problem-grid priority-grid">
+        ${items.map((p, index) => cardHtml(p, { rank: index + 1, hotMeta: getHuaweiHighFreqMeta(p.id) })).join("")}
+      </div>
+      ${items.length ? "" : `<div style="text-align:center;color:var(--ink-faint);padding:60px 0">没有符合条件的高频题</div>`}
+    </section>`;
+
+  bindProblemCards(container);
+}
+
+function bindProblemCards(container) {
+  container.querySelectorAll(".problem-card").forEach(el => {
+    el.onclick = (e) => {
+      if (e.target.closest(".star-toggle")) return;
       location.hash = "#/p/" + el.dataset.id;
     };
     const starBtn = el.querySelector(".star-toggle");
@@ -740,17 +796,21 @@ function renderCategories() {
   });
 }
 
-function cardHtml(p) {
+function cardHtml(p, opts = {}) {
   const starred = Store.isStarred(p.id);
   const noted = noteExists(p.id);
+  const hotMeta = opts.hotMeta;
   return `
-    <div class="problem-card ${statusClass(p.id)}" data-id="${p.id}">
+    <div class="problem-card ${statusClass(p.id)} ${hotMeta ? "priority-card" : ""}" data-id="${p.id}">
+      ${opts.rank ? `<span class="priority-rank">#${opts.rank}</span>` : ""}
       <span class="pc-id">${p.id}</span>
       <div class="pc-body">
         <div class="pc-title">${p.title}</div>
         <div class="pc-meta">
           <span class="diff d${p.diff}">${DIFF_TEXT[p.diff]}</span>
           ${p.premium ? `<span class="premium-mark">Plus</span>` : ""}
+          ${hotMeta ? `<span class="freq-badge" title="用户题单中合并统计的出现次数">频次 ${hotMeta.hits}</span>` : ""}
+          ${hotMeta && hotMeta.inHot100 ? `<span class="hot100-badge">Hot100 加权</span>` : ""}
         </div>
       </div>
       <span class="difficulty-mark d${p.diff}" title="${DIFF_TEXT[p.diff]}">
@@ -809,7 +869,7 @@ function route() {
   let m;
   if (hash === "#/" || hash === "") { renderHome(); return; }
   if (hash === "#/hot100") { setNav("hot100"); renderList(); return; }
-  if ((m = hash.match(/^#\/p\/(\d+)/))) { setNav("hot100"); renderDetail(parseInt(m[1], 10)); window.scrollTo(0, 0); return; }
+  if ((m = hash.match(/^#\/p\/([^/]+)/))) { setNav("hot100"); renderDetail(decodeURIComponent(m[1])); window.scrollTo(0, 0); return; }
   if (hash === "#/custom") { renderCustomList(); return; }
   if ((m = hash.match(/^#\/custom\/([\w-]+)/))) { renderCustomDetail(m[1]); window.scrollTo(0, 0); return; }
   if (hash === "#/kb") { renderKb(null); return; }

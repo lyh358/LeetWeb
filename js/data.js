@@ -154,8 +154,120 @@ const EXTRA_PROBLEMS = [
   { id: 85,  title: "最大矩形",                            slug: "maximal-rectangle",                                          diff: 3, cat: "经典补充" },
 ];
 
+const HUAWEI_EXTRA_PROBLEMS = [
+  { id: 122, title: "买卖股票的最佳时机 II",                slug: "best-time-to-buy-and-sell-stock-ii",                         diff: 2, cat: "华为高频补充" },
+  { id: 1423,title: "可获得的最大点数",                    slug: "maximum-points-you-can-obtain-from-cards",                   diff: 2, cat: "华为高频补充" },
+  { id: 134, title: "加油站",                              slug: "gas-station",                                                diff: 2, cat: "华为高频补充" },
+  { id: 217, title: "存在重复元素",                        slug: "contains-duplicate",                                         diff: 1, cat: "华为高频补充" },
+  { id: 456, title: "132 模式",                            slug: "132-pattern",                                                diff: 2, cat: "华为高频补充" },
+  { id: 71,  title: "简化路径",                            slug: "simplify-path",                                              diff: 2, cat: "华为高频补充" },
+  { id: 986, title: "区间列表的交集",                      slug: "interval-list-intersections",                                diff: 2, cat: "华为高频补充" },
+  { id: 1011,title: "在 D 天内送达包裹的能力",             slug: "capacity-to-ship-packages-within-d-days",                    diff: 2, cat: "华为高频补充" },
+  { id: 110, title: "平衡二叉树",                          slug: "balanced-binary-tree",                                       diff: 1, cat: "华为高频补充" },
+  { id: 113, title: "路径总和 II",                         slug: "path-sum-ii",                                                diff: 2, cat: "华为高频补充" },
+  { id: 129, title: "求根节点到叶节点数字之和",            slug: "sum-root-to-leaf-numbers",                                   diff: 2, cat: "华为高频补充" },
+  { id: 1160,title: "拼写单词",                            slug: "find-words-that-can-be-formed-by-characters",                diff: 1, cat: "华为高频补充" },
+  { id: 1302,title: "层数最深叶子节点的和",                slug: "deepest-leaves-sum",                                         diff: 2, cat: "华为高频补充" },
+  { id: 14,  title: "最长公共前缀",                        slug: "longest-common-prefix",                                      diff: 1, cat: "华为高频补充" },
+  { id: 149, title: "直线上最多的点数",                    slug: "max-points-on-a-line",                                       diff: 3, cat: "华为高频补充" },
+  { id: 151, title: "反转字符串中的单词",                  slug: "reverse-words-in-a-string",                                  diff: 2, cat: "华为高频补充" },
+  { id: 1624,title: "两个相同字符之间的最长子字符串",      slug: "largest-substring-between-two-equal-characters",             diff: 1, cat: "华为高频补充" },
+  { id: 179, title: "最大数",                              slug: "largest-number",                                             diff: 2, cat: "华为高频补充" },
+  { id: 1790,title: "仅执行一次字符串交换能否使两个字符串相等", slug: "check-if-one-string-swap-can-make-strings-equal",        diff: 1, cat: "华为高频补充" },
+  { id: 1905,title: "统计子岛屿",                          slug: "count-sub-islands",                                          diff: 2, cat: "华为高频补充" },
+  { id: 1985,title: "找出数组中的第 K 大整数",             slug: "find-the-kth-largest-integer-in-the-array",                   diff: 2, cat: "华为高频补充" },
+  { id: 204, title: "计数质数",                            slug: "count-primes",                                               diff: 2, cat: "华为高频补充" },
+  { id: 209, title: "长度最小的子数组",                    slug: "minimum-size-subarray-sum",                                  diff: 2, cat: "华为高频补充" },
+  { id: 2094,title: "找出 3 位偶数",                       slug: "finding-3-digit-even-numbers",                               diff: 1, cat: "华为高频补充" },
+  { id: 223, title: "矩形面积",                            slug: "rectangle-area",                                             diff: 2, cat: "华为高频补充" },
+  { id: 2289,title: "使数组按非递减顺序排列",              slug: "steps-to-make-array-non-decreasing",                         diff: 2, cat: "华为高频补充" },
+  { id: 263, title: "丑数",                                slug: "ugly-number",                                                diff: 1, cat: "华为高频补充" },
+  { id: 316, title: "去除重复字母",                        slug: "remove-duplicate-letters",                                    diff: 2, cat: "华为高频补充" },
+  { id: 377, title: "组合总和 IV",                         slug: "combination-sum-iv",                                         diff: 2, cat: "华为高频补充" },
+  { id: 415, title: "字符串相加",                          slug: "add-strings",                                                diff: 1, cat: "华为高频补充" },
+  { id: 47,  title: "全排列 II",                           slug: "permutations-ii",                                            diff: 2, cat: "华为高频补充" },
+  { id: 480, title: "滑动窗口中位数",                      slug: "sliding-window-median",                                      diff: 3, cat: "华为高频补充" },
+  { id: 582, title: "杀掉进程",                            slug: "kill-process",                                               diff: 2, cat: "华为高频补充", premium: true },
+  { id: 583, title: "两个字符串的删除操作",                slug: "delete-operation-for-two-strings",                           diff: 2, cat: "华为高频补充" },
+  { id: 65,  title: "有效数字",                            slug: "valid-number",                                               diff: 3, cat: "华为高频补充" },
+  { id: 678, title: "有效的括号字符串",                    slug: "valid-parenthesis-string",                                   diff: 2, cat: "华为高频补充" },
+  { id: 679, title: "24 点游戏",                           slug: "24-game",                                                    diff: 3, cat: "华为高频补充" },
+  { id: 690, title: "员工的重要性",                        slug: "employee-importance",                                        diff: 2, cat: "华为高频补充" },
+  { id: 692, title: "前 K 个高频单词",                     slug: "top-k-frequent-words",                                       diff: 2, cat: "华为高频补充" },
+  { id: 704, title: "二分查找",                            slug: "binary-search",                                              diff: 1, cat: "华为高频补充" },
+  { id: 708, title: "循环有序列表的插入",                  slug: "insert-into-a-sorted-circular-linked-list",                   diff: 2, cat: "华为高频补充", premium: true },
+  { id: 718, title: "最长重复子数组",                      slug: "maximum-length-of-repeated-subarray",                        diff: 2, cat: "华为高频补充" },
+  { id: 735, title: "小行星碰撞",                          slug: "asteroid-collision",                                         diff: 2, cat: "华为高频补充" },
+  { id: 875, title: "爱吃香蕉的珂珂",                      slug: "koko-eating-bananas",                                        diff: 2, cat: "华为高频补充" },
+  { id: 91,  title: "解码方法",                            slug: "decode-ways",                                                diff: 2, cat: "华为高频补充" },
+  { id: 951, title: "翻转等价二叉树",                      slug: "flip-equivalent-binary-trees",                               diff: 2, cat: "华为高频补充" },
+  { id: "M0106", title: "面试题 01.06. 字符串压缩",        slug: "compress-string-lcci",                                       diff: 1, cat: "华为高频补充" },
+  { id: "M0202", title: "面试题 02.02. 返回倒数第 k 个节点", slug: "kth-node-from-end-of-list-lcci",                            diff: 1, cat: "华为高频补充" },
+  { id: "M1724", title: "面试题 17.24. 最大子矩阵",        slug: "max-submatrix-lcci",                                         diff: 3, cat: "华为高频补充" },
+];
+
+// 华为校招&实习高频刷题排序源。
+// 来源页：https://codefun2000.com/codenote/hot100/P0023
+// 说明：普通 LeetCode、LCR、面试题都会纳入；无法定位到 LeetCode 原题的原创手撕题暂不进入本轮单。
+// rank 越小越靠前，hits 表示从用户提供文本中合并出的出现频次；与官方 Hot100 重合的题会额外加权。
+const HUAWEI_HIGH_FREQ_SOURCE_URL = "https://codefun2000.com/codenote/hot100/P0023";
+const HUAWEI_HOT100_BONUS = 0.35;
+const HUAWEI_HIGH_FREQ_ITEMS = [
+  { id: 20, hits: 13 }, { id: 200, hits: 10 }, { id: 739, hits: 7 }, { id: 994, hits: 7 },
+  { id: 1, hits: 6 }, { id: 3, hits: 6 }, { id: 46, hits: 6 }, { id: 122, hits: 5 },
+  { id: 56, hits: 5 }, { id: 102, hits: 4 }, { id: 1423, hits: 4 }, { id: 394, hits: 4 },
+  { id: 64, hits: 4 }, { id: 11, hits: 2 }, { id: 134, hits: 2 }, { id: 141, hits: 2 },
+  { id: 15, hits: 2 }, { id: 155, hits: 2 }, { id: 21, hits: 2 }, { id: 217, hits: 2 },
+  { id: 23, hits: 2 }, { id: 42, hits: 2 }, { id: 456, hits: 2 }, { id: 49, hits: 2 },
+  { id: 5, hits: 2 }, { id: 71, hits: 2 }, { id: 986, hits: 2 }, { id: 1011, hits: 1 },
+  { id: 104, hits: 1 }, { id: 110, hits: 1 }, { id: 113, hits: 1 }, { id: 1143, hits: 1 },
+  { id: 1160, hits: 1 }, { id: 129, hits: 1 }, { id: 1302, hits: 1 }, { id: 139, hits: 1 }, { id: 14, hits: 1 },
+  { id: 146, hits: 1 }, { id: 149, hits: 1 }, { id: 151, hits: 1 }, { id: 152, hits: 1 },
+  { id: 160, hits: 1 }, { id: 1624, hits: 1 }, { id: 17, hits: 1 }, { id: 179, hits: 1 },
+  { id: 1790, hits: 1 }, { id: 19, hits: 1 }, { id: 1905, hits: 1 }, { id: 198, hits: 1 },
+  { id: 1985, hits: 1 }, { id: 2, hits: 1 }, { id: 204, hits: 1 }, { id: 209, hits: 1 },
+  { id: 2094, hits: 1 }, { id: 215, hits: 1 }, { id: 223, hits: 1 }, { id: 2289, hits: 1 },
+  { id: 239, hits: 1 }, { id: 240, hits: 1 }, { id: 263, hits: 1 }, { id: 300, hits: 1 },
+  { id: 316, hits: 1 }, { id: 322, hits: 1 }, { id: 377, hits: 1 }, { id: 4, hits: 1 },
+  { id: 415, hits: 1 }, { id: 416, hits: 1 }, { id: 47, hits: 1 }, { id: 480, hits: 1 },
+  { id: 53, hits: 1 }, { id: 54, hits: 1 }, { id: 582, hits: 1 }, { id: 583, hits: 1 },
+  { id: 62, hits: 1 }, { id: 647, hits: 1 }, { id: 65, hits: 1 }, { id: 678, hits: 1 },
+  { id: 679, hits: 1 }, { id: 690, hits: 1 }, { id: 692, hits: 1 }, { id: 70, hits: 1 },
+  { id: 704, hits: 1 }, { id: 708, hits: 1 }, { id: 718, hits: 1 }, { id: 72, hits: 1 },
+  { id: 735, hits: 1 }, { id: 74, hits: 1 }, { id: 875, hits: 1 }, { id: 91, hits: 1 },
+  { id: 951, hits: 1 }, { id: "M0106", hits: 1 }, { id: "M0202", hits: 1 }, { id: "M1724", hits: 1 },
+];
+
 const DIFF_TEXT = { 1: "简单", 2: "中等", 3: "困难" };
 
 // 便捷索引
-const ALL_PROBLEMS = [...PROBLEMS, ...EXTRA_PROBLEMS];
+const ALL_PROBLEMS = [...PROBLEMS, ...EXTRA_PROBLEMS, ...HUAWEI_EXTRA_PROBLEMS];
 const PROBLEM_BY_ID = ALL_PROBLEMS.reduce((m, p) => (m[p.id] = p, m), {});
+const HOT100_ID_SET = new Set(PROBLEMS.map(p => p.id));
+const HUAWEI_HIGH_FREQ_MAP = HUAWEI_HIGH_FREQ_ITEMS.reduce((m, item, index) => {
+  m[item.id] = Object.assign({ rank: index + 1 }, item);
+  return m;
+}, {});
+
+function getHuaweiHighFreqMeta(id) {
+  const item = HUAWEI_HIGH_FREQ_MAP[id];
+  if (!item) return null;
+  const inHot100 = HOT100_ID_SET.has(Number(id));
+  return {
+    rank: item.rank,
+    hits: item.hits,
+    inHot100,
+    score: item.hits + (inHot100 ? HUAWEI_HOT100_BONUS : 0),
+  };
+}
+
+function getHuaweiHighFreqProblems() {
+  return HUAWEI_HIGH_FREQ_ITEMS
+    .map(item => PROBLEM_BY_ID[item.id])
+    .filter(Boolean)
+    .sort((a, b) => {
+      const ma = getHuaweiHighFreqMeta(a.id);
+      const mb = getHuaweiHighFreqMeta(b.id);
+      return (mb.score - ma.score) || (ma.rank - mb.rank);
+    });
+}
